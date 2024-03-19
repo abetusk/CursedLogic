@@ -1,0 +1,6 @@
+#!/bin/bash
+#
+# LICENSE: CC0
+#
+
+websocketd --port=3001 ./serve-plot

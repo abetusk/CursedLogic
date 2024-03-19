@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+# LICENSE: CC0
+#
+
+sleepy=0.25
+sleepy1=1
+GP_FN="data/data.gp"
+
+while true ; do
+  cat $GP_FN | tr '\n' ','
+  echo ""
+  sleep $sleepy
+done
