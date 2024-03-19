@@ -52,3 +52,7 @@ Mkfile.old
 dkms.conf
 
 *~
+.*.swp
+package.json
+package-lock.json
+
