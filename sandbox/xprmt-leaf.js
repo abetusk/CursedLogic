@@ -28,10 +28,12 @@ let rho =  S / Math.sqrt(N);
 
 let VERBOSE = 0;
 
-function new_vein(info, x, y, dx, dy) {
+function new_vein(info, x, y, dx, dy, p_idx) {
+  p_idx = ((typeof p_idx === "undefined") ? -1 : p_idx);
   let vein_info = {
     "x" : x,
     "y" : y,
+    "p_idx": p_idx,
     "type"  : "vein",
     "state" : 0,
     "a_idx" : -1,
@@ -57,22 +59,44 @@ let g_info = {
   "n": N,
   "bb": {"x":-S/2, "y":-S/2, "w":S, "h": S},
   "dx": S, "dy": S,
-  "ds": 50,
+  "ds": 200,
   //"r_kill": 0.5*rho,
   //"r_bias": 1.0*rho,
-  "r_kill": 0.2*rho,
+  "r_kill": 1.125*rho,
   //"r_bias": 1.25*rho,
-  "r_bias": 7.0*rho,
+  "r_bias": 2.75*rho,
   "eps": 1/(1024*1024),
   "auxin" : [],
   "vein": [],
   "wf_idx": [],
 
+  "max_iter" : 80,
+
   "disp_scale" : 400/S,
   "disp_dxy" : [ S / 2, S / 2 ],
   "disp_pnt" : []
 
+
 };
+
+function _transform(pnt, dx, dy, s) {
+  for (let ii=0; ii<pnt.length; ii++) {
+    pnt[ii].x = (pnt[ii].x + dx)*s;
+    pnt[ii].y = (pnt[ii].y + dy)*s;
+  }
+  return pnt;
+}
+
+function _transforml(line, dx, dy, s) {
+  for (let ii=0; ii<line.length; ii++) {
+    line[ii].x = (line[ii].x + dx)*s;
+    line[ii].y = (line[ii].y + dy)*s;
+
+    line[ii].dx *= s;
+    line[ii].dy *= s;
+  }
+  return line;
+}
 
 function space_col_init() {
   let tree = new qt.QuadTree( new qt.Box( g_info.bb.x, 
@@ -138,22 +162,49 @@ function __x() {
   let vein_wf = [ g_info.vein[0] ];
 
   // ---disp----
+  /*
   let _tp = g_info.auxin_tree.getAllPoints();
   disp_pnt = [];
   for (let ii=0; ii<_tp.length; ii++) {
     disp_pnt.push({
+      "c": "#ff0",
       "x": (_tp[ii].x + g_info.disp_dxy[0])*g_info.disp_scale,
       "y": (_tp[ii].y + g_info.disp_dxy[1])*g_info.disp_scale
     });
   }
   _plot( disp_pnt );
+  */
   // ---disp----
 
   let iter = -1;
-  for (let _iter=0; _iter<1; _iter++) {
+  while ( (iter < g_info.max_iter) &&
+          (vein_wf.length > 0) ) {
+  //for (let _iter=0; _iter<60; _iter++) {
   //while (vein_wf.length > 0) {
 
+    //  ---DISPLAY---
+    //  ---DISPLAY---
+    //  ---DISPLAY---
+    disp_pnt = [];
+
+    for (let ii=0; ii<g_info.vein.length; ii++) {
+      let c = "#707";
+      if (g_info.vein[ii].auxin_count > 0) { c = "#f0f"; }
+      disp_pnt.push({
+        "c": c,
+        "x": g_info.vein[ii].x,
+        "y": g_info.vein[ii].y
+      });
+    }
+
+    //  ---DISPLAY---
+    //  ---DISPLAY---
+    //  ---DISPLAY---
+
+
     iter++;
+
+    //console.log(">>>", iter, vein_wf);
 
     if (VERBOSE > 0) {
       console.log("### iter:", iter, ", vein_wf.length:", vein_wf.length);
@@ -183,22 +234,30 @@ function __x() {
           console.log("# v:", v.x, v.y, "kill", killpnt[_k].data.x, killpnt[_k].data.y);
         }
 
+        disp_pnt.push({
+          "c": "#f00",
+          "x": killpnt[_k].x,
+          "y": killpnt[_k].y
+        });
+
         tree.remove( killpnt[_k] );
+
+        //console.log("KILL", killpnt[_k]);
       }
     }
 
     // ---disp----
     let _tp = g_info.auxin_tree.getAllPoints();
-    disp_pnt = [];
     for (let ii=0; ii<_tp.length; ii++) {
       disp_pnt.push({
-        "x": (_tp[ii].x + g_info.disp_dxy[0])*g_info.disp_scale,
-        "y": (_tp[ii].y + g_info.disp_dxy[1])*g_info.disp_scale
+        "c": "#070",
+        "x": _tp[ii].x,
+        "y": _tp[ii].y
       });
     }
-    _plot( disp_pnt );
+    _transform(disp_pnt, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
+    //_plot( disp_pnt );
     // ---disp----
-
 
 
     // AUXIN INIT
@@ -320,7 +379,7 @@ function __x() {
 
         let dx = v.dx / (v.dir_count+1);
         let dy = v.dy / (v.dir_count+1);
-        let dst_v = new_vein(g_info, v.x + dx, v.y + dy, dx, dy);
+        let dst_v = new_vein(g_info, v.x + dx, v.y + dy, dx, dy, v.idx);
 
         g_info.vein.push(dst_v);
 
@@ -339,7 +398,47 @@ function __x() {
       console.log("#\n#");
     }
 
+
+
   }
+
+  //_plot( disp_pnt );
+
+  console.log("done");
+
+  /*
+  disp_pnt = [];
+  for (let ii=0; ii<g_info.vein.length; ii++) {
+    disp_pnt.push({
+      "c": "f0f",
+      "x": g_info.vein[ii].x,
+      "y": g_info.vein[ii].y
+    });
+  }
+  _transform(disp_pnt, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
+  _plot(disp_pnt);
+  */
+
+  disp_line = [];
+  for (let ii=0; ii<g_info.vein.length; ii++) {
+    let p_idx = g_info.vein[ii].p_idx;
+    if (p_idx < 0) { continue; }
+
+    let v  = g_info.vein[ii];
+    let pv = g_info.vein[p_idx];
+
+    disp_line.push({
+      "c": "#777",
+      "x": pv.x,
+      "y": pv.y,
+      "dx": v.x - pv.x,
+      "dy": v.y - pv.y
+    });
+
+  }
+
+  _transforml(disp_line, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
+  _plotl(disp_line);
 
   /*
   for (let ii=0; ii<g_info.auxin.length; ii++) {
