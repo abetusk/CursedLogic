@@ -7,7 +7,7 @@
 // work.  If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-//export for commonJS or browser
+// export for commonJS or browser
 //
 var qt;
 if ((typeof module !== 'undefined') &&
@@ -22,7 +22,7 @@ else {
 
 
 
-let N = 500;
+let N = 2500;
 let S = 10000;
 let rho =  S / Math.sqrt(N);
 
@@ -53,24 +53,31 @@ function new_vein(info, x, y, dx, dy, p_idx) {
 }
 
 
-//console.log("## N:", N, "S:", S, "rho:", rho);
-
 let g_info = {
   "n": N,
   "bb": {"x":-S/2, "y":-S/2, "w":S, "h": S},
   "dx": S, "dy": S,
-  "ds": 200,
+
+  "ds": 125,
+  "max_iter" : 1000,
+
   //"r_kill": 0.5*rho,
   //"r_bias": 1.0*rho,
+
+  //"r_kill": 1.125*rho,
   "r_kill": 1.125*rho,
+
   //"r_bias": 1.25*rho,
-  "r_bias": 2.75*rho,
+  //"r_bias": 2.75*rho,
+  "r_bias": 2.5*rho,
+
   "eps": 1/(1024*1024),
   "auxin" : [],
   "vein": [],
   "wf_idx": [],
 
-  "max_iter" : 80,
+  "parent_vein_weight": 0.125,
+
 
   "disp_scale" : 400/S,
   "disp_dxy" : [ S / 2, S / 2 ],
@@ -99,6 +106,9 @@ function _transforml(line, dx, dy, s) {
 }
 
 function space_col_init() {
+
+  let rand_alg = "halton"; // "random"
+
   let tree = new qt.QuadTree( new qt.Box( g_info.bb.x, 
                                           g_info.bb.y,
                                           g_info.bb.w,
@@ -108,13 +118,16 @@ function space_col_init() {
   let halton_cx = 0.5,
       halton_cy = 0.5;
 
-
-  let seq = halton.seq2d(2,3,g_info.n);
-
-  //seq = [];
-  //for (let ii=0; ii< g_info.n; ii++) {
-  //  seq.push( [ Math.random(), Math.random() ] );
-  //}
+  let seq = [];
+  if (rand_alg == "halton") {
+    seq = halton.seq2d(2,3,g_info.n);
+  }
+  else if (rand_alg == "random") {
+    seq = [];
+    for (let ii=0; ii<g_info.n; ii++) {
+      seq.push([ Math.random(), Math.random() ]);
+    }
+  }
 
   for (let ii=0; ii<seq.length; ii++) {
 
@@ -140,12 +153,28 @@ function space_col_init() {
 
 }
 
+// The algorihm iterates through five phases:
+//
+// * auxin kill       - kill auxin nodes that are too close to vein nodes
+// * auxin init       - sweep nearby auxin nodes from vein nodes and initialize them
+// * auxin queue      - associate the appropriate vein nodes to each auxin node within
+//                      influence distance
+// * auxin pull       - gather forces for each influenced vein node
+// * vein wavefront   - create new vein nodes from vein nodes that have at least
+//                      one auxin node influencing it, keeping vein nodes already in
+//                      the wavefront if they are still within influence radius of
+//                      an auxin node
+//
+// Initially the vein wavefront list has the root node.
+// The above steps are iterated until the vein wave front list is cleared or a maximum
+// iteration count is exceeded.
+//
+// Auxin nodes are kept in a quadtree for fast neighbor querying.
+//
+// g_info.vein holds the vein nodes.
+//
+//
 function space_col_start() {
-  __x();
-}
-
-function __x() {
-
   let tree = g_info.auxin_tree;
 
   // root point
@@ -157,60 +186,22 @@ function __x() {
   let query_kill = new qt.Circle(0, 0, g_info.r_kill);
   let query_bias = new qt.Circle(0, 0, g_info.r_bias);
 
-  console.log("# r_kill:", g_info.r_kill, ", r_bias:", g_info.r_bias);
+  if (VERBOSE > 0) {
+    console.log("# r_kill:", g_info.r_kill, ", r_bias:", g_info.r_bias);
+  }
 
   let vein_wf = [ g_info.vein[0] ];
 
-  // ---disp----
-  /*
-  let _tp = g_info.auxin_tree.getAllPoints();
-  disp_pnt = [];
-  for (let ii=0; ii<_tp.length; ii++) {
-    disp_pnt.push({
-      "c": "#ff0",
-      "x": (_tp[ii].x + g_info.disp_dxy[0])*g_info.disp_scale,
-      "y": (_tp[ii].y + g_info.disp_dxy[1])*g_info.disp_scale
-    });
-  }
-  _plot( disp_pnt );
-  */
-  // ---disp----
+  let _time_s = Date.now();
 
   let iter = -1;
   while ( (iter < g_info.max_iter) &&
           (vein_wf.length > 0) ) {
-  //for (let _iter=0; _iter<60; _iter++) {
-  //while (vein_wf.length > 0) {
-
-    //  ---DISPLAY---
-    //  ---DISPLAY---
-    //  ---DISPLAY---
-    disp_pnt = [];
-
-    for (let ii=0; ii<g_info.vein.length; ii++) {
-      let c = "#707";
-      if (g_info.vein[ii].auxin_count > 0) { c = "#f0f"; }
-      disp_pnt.push({
-        "c": c,
-        "x": g_info.vein[ii].x,
-        "y": g_info.vein[ii].y
-      });
-    }
-
-    //  ---DISPLAY---
-    //  ---DISPLAY---
-    //  ---DISPLAY---
-
-
     iter++;
-
-    //console.log(">>>", iter, vein_wf);
 
     if (VERBOSE > 0) {
       console.log("### iter:", iter, ", vein_wf.length:", vein_wf.length);
     }
-    //console.log(vein_wf);
-
 
     let auxin_queue = [];
     let nxt_vein_wf = [];
@@ -234,31 +225,9 @@ function __x() {
           console.log("# v:", v.x, v.y, "kill", killpnt[_k].data.x, killpnt[_k].data.y);
         }
 
-        disp_pnt.push({
-          "c": "#f00",
-          "x": killpnt[_k].x,
-          "y": killpnt[_k].y
-        });
-
         tree.remove( killpnt[_k] );
-
-        //console.log("KILL", killpnt[_k]);
       }
     }
-
-    // ---disp----
-    let _tp = g_info.auxin_tree.getAllPoints();
-    for (let ii=0; ii<_tp.length; ii++) {
-      disp_pnt.push({
-        "c": "#070",
-        "x": _tp[ii].x,
-        "y": _tp[ii].y
-      });
-    }
-    _transform(disp_pnt, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
-    //_plot( disp_pnt );
-    // ---disp----
-
 
     // AUXIN INIT
     //
@@ -279,12 +248,12 @@ function __x() {
       }
     }
 
+    // AUXIN QUEUE
+    //
     // distance query
     //
     for (let ii=0; ii<vein_wf.length; ii++) {
       let v = vein_wf[ii];
-
-      //console.log("vein_wf[", ii, "]:", v);
 
       query_bias.x = v.x;
       query_bias.y = v.y;
@@ -298,24 +267,15 @@ function __x() {
         let _dy = a.data.y - v.y;
         let _dist = Math.sqrt(  _dx*_dx + _dy*_dy );
 
-        //console.log("## dist:", _dx, _dy, _dist);
-
         if (a.data.v_idx < 0) {
-          //console.log(">>> pushing auxin", a.data.idx, a);
           auxin_queue.push(a);
-
-          //console.log("pushed auxin:", a.data.idx);
         }
-        else {
-          //console.log(" >> auxin", a.data.idx, "already there...");
-        }
+        else { }
 
         if ((a.data.v_idx < 0) ||
             (_dist < a.data.d)) {
           a.data.d = _dist;
           a.data.v_idx = v.idx;
-
-          //console.log(" ....auxin:", a.data.idx, " connected to vein:", v.idx);
 
           if (VERBOSE > 0) {
             console.log("#> updating auxin (", a.data.x, a.data.y, "),  v_idx:", a.data.v_idx, ", dist:", a.data.d );
@@ -325,19 +285,8 @@ function __x() {
       }
     }
 
-    //DEBUG
-    if (VERBOSE > 0) {
-      for (let ii=0; ii<vein_wf.length; ii++) {
-        console.log("# vein_wf[", ii, "]: (", vein_wf[ii].x, vein_wf[ii].y, "), auxin_count:", vein_wf[ii].auxin_count );
-      }
-    }
-
-    //DEBUG
-    //for (let ii=0; ii<auxin_queue.length; ii++) {
-    //  let a = auxin_queue[ii];
-    //  console.log("# auxin_queue[", ii, "/", auxin_queue.length, "]:", a.data.x, a.data.y, ", v_idx:", a.data.v_idx);
-    //}
-
+    // AUXIN PULL
+    //
     // go through all auxin nodes that have influence over vein nodes
     // and update their thralled vein nodes
     //
@@ -347,29 +296,20 @@ function __x() {
       let v_idx = a.data.v_idx;
       let v = g_info.vein[v_idx];
 
-      //console.log(">>>v_idx:", v_idx);
-
       let _dx = a.data.x - v.x;
       let _dy = a.data.y - v.y;
       let _dist = Math.sqrt( _dx*_dx + _dy*_dy );
 
       let ds = g_info.ds;
 
-      //v.orig_dx = v.dx;
-      //v.orig_dy = v.dy;
       v.dx += ds*_dx / _dist;
       v.dy += ds*_dy / _dist;
       v.dir_count++;
 
-      //DEBUG
-      if (VERBOSE > 0) {
-        console.log("# auxin_queue[", ii, "/", auxin_queue.length, "]:", a.data.x, a.data.y, ", v_idx:", a.data.v_idx,
-        ", v(", v.x, v.y, ") + (", v.dx, v.dy, ") c:", v.dir_count);
-      }
-
-
     }
 
+    // VEIN WAVEFRONT
+    //
     // remove vein elements that have no auxin nodes within bias distance
     //
     for (let ii=0; ii<vein_wf.length; ii++) {
@@ -379,7 +319,15 @@ function __x() {
 
         let dx = v.dx / (v.dir_count+1);
         let dy = v.dy / (v.dir_count+1);
-        let dst_v = new_vein(g_info, v.x + dx, v.y + dy, dx, dy, v.idx);
+        //let dst_v = new_vein(g_info, v.x + dx, v.y + dy, dx, dy, v.idx);
+
+        let new_dx = 0, new_dy = 0;
+        let _w = g_info.parent_vein_weight;
+        if (v.p_idx >= 0) {
+          new_dx = _w*(v.x - g_info.vein[v.p_idx].x);
+          new_dy = _w*(v.y - g_info.vein[v.p_idx].y);
+        }
+        let dst_v = new_vein(g_info, v.x + dx, v.y + dy, new_dx, new_dy, v.idx);
 
         g_info.vein.push(dst_v);
 
@@ -402,22 +350,28 @@ function __x() {
 
   }
 
-  //_plot( disp_pnt );
+  let _time_e = Date.now();
 
-  console.log("done");
+  console.log(_time_s, _time_e, "==>", _time_e - _time_s);
 
-  /*
-  disp_pnt = [];
-  for (let ii=0; ii<g_info.vein.length; ii++) {
+
+
+  // ---disp----
+  let _auxin = g_info.auxin;
+  let disp_pnt = [];
+  for (let ii=0; ii<_auxin.length; ii++) {
+    let c = "#f003";
+    if (_auxin[ii].data.d < 0) { c = "#0f05"; }
     disp_pnt.push({
-      "c": "f0f",
-      "x": g_info.vein[ii].x,
-      "y": g_info.vein[ii].y
+      "c": c,
+      "x": _auxin[ii].x,
+      "y": _auxin[ii].y
     });
   }
   _transform(disp_pnt, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
-  _plot(disp_pnt);
-  */
+  _plot( disp_pnt );
+  // ---disp----
+
 
   disp_line = [];
   for (let ii=0; ii<g_info.vein.length; ii++) {
@@ -440,51 +394,10 @@ function __x() {
   _transforml(disp_line, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
   _plotl(disp_line);
 
-  /*
-  for (let ii=0; ii<g_info.auxin.length; ii++) {
-    console.log(g_info.auxin[ii].x, g_info.auxin[ii].y);
-    console.log("\n");
-  }
-  console.log("\n");
-
-  for (let ii=0; ii<g_info.vein.length; ii++) {
-    let v = g_info.vein[ii];
-    console.log(v.x, v.y);
-    console.log(v.x + v.dx, v.y + v.dy );
-    console.log();
-  }
-  //console.log(g_info.vein);
-  */
-
 
   return;
 
-  /*
-  let cpnt = new qt.Circle(0, 0, g_biaso.r_inf);
-  cpnt.x = 0.0;
-  cpnt.y = 0.0;
-  let xx = tree.query(cpnt);
-
-  let tpnt = new qt.Circle( g_info.bb.x + g_info.dx/2, g_info.bb.y , g_info.r_bias);
-  console.log(tpnt, tree.query(tpnt));
-  */
 }
-
-//for (let ii=0; ii<xx.length; ii++) {
-//  console.log(xx[ii].x, xx[ii].y, xx[ii]);
-//}
-
-//let idx = Math.floor( N * Math.random() );
-//let wf = [ seq[idx][0], seq[idx][1] ];
-
-//console.log(">>", tree.objects.length, tree.nodes.length);
-
-
-//console.log(xx);
-//console.log("##");
-
-//for (let ii=0; ii<xx.length; ii++) { console.log(xx[ii].x, xx[ii].y); }
-
-space_col_init();
+//space_col_init();
 
 
