@@ -117,4 +117,46 @@ Some points that initially caused me confusion:
     the two auxin nodes
   
 
+### Closed Venetian Pattern
 
+Here, auxin nodes now influence all vein nodes within their relative neighborhood graph.
+
+The relative neighborhood graph, $\text{RNG}(V)$,
+of an embedded graph $(V,E)$ in some 3D Euclidean space, say,
+is defined as:
+
+$$
+\begin{array}{ll}
+\textbf{B} _ {0} (x, r) & = \{ y : |x-y| < r \} \\
+\Lambda _ {p,q} & = \textbf{B} _ {0} (p, |p-q|) \ \cap \ \textbf{B} _ {0} (q, |p-q|) \\
+\text{RNG}(V) & = \{ (p,q) : (p,q) \in E , \ \Lambda _ {p,q} \ \cap V = \emptyset\}
+\end{array}
+$$
+
+$\Lambda _ {p,q}$ is called a *lune*.
+
+For any two points, $p$ and $q$, if there are no other points in their lune, they are part
+of the relative neighbor graph.
+
+An alternative, equivalent, definition is:
+
+$$
+\text{RNG}(V) = \{ (p,q) : (p,q) \in E, |p-q| \le \max  _ {v \in V / \{p,q\} } ( |p-v|, |q-v| ) \}
+$$
+
+The Closed Venetian Pattern algorithm considers all vein nodes within the relative neighborhood
+graph of each auxin node.
+That is, instead of each auxin node linking to at most one vein node, they now link up to multiple.
+
+Once a vein node enters the kill zone of an auxin node, the auxin node is not immediately removed
+but is earmarked for future removal when all descendent vein nodes have converged into the kill zone.
+
+
+
+
+References
+---
+
+* [medium](https://medium.com/@jason.webb/space-colonization-algorithm-in-javascript-6f683b743dc5)
+* [Relative Neighborhoods and Their Relatives by Jaromczyk and Toussaint](https://cgm.cs.mcgill.ca/~godfried/publications/proximity.survey.pdf)
+* [Lune](https://en.wikipedia.org/wiki/Lune_%28geometry%29)
