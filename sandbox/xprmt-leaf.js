@@ -76,7 +76,8 @@ let g_info = {
   "vein": [],
   "wf_idx": [],
 
-  "parent_vein_weight": 0.125,
+  "parent_vein_weight": 0.0,
+  "parent_vein_denom": 1,
 
 
   "disp_scale" : 400/S,
@@ -317,8 +318,10 @@ function space_col_start() {
       if (v.auxin_count > 0) { nxt_vein_wf.push( v ); }
       if (v.dir_count > 0) {
 
-        let dx = v.dx / (v.dir_count+1);
-        let dy = v.dy / (v.dir_count+1);
+        let _den = g_info.parent_vein_denom;
+        let dx = v.dx / (v.dir_count+_den);
+        let dy = v.dy / (v.dir_count+_den);
+
         //let dst_v = new_vein(g_info, v.x + dx, v.y + dy, dx, dy, v.idx);
 
         let new_dx = 0, new_dy = 0;
