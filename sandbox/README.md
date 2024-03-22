@@ -127,9 +127,9 @@ is defined as:
 
 $$
 \begin{array}{ll}
-\textbf{B} _ {0} (x, r) & = \{ y : |x-y| < r \} \\
+\textbf{B} _ {0} (x, r) & = \\{ y : |x-y| < r \\} \\
 \Lambda _ {p,q} & = \textbf{B} _ {0} (p, |p-q|) \ \cap \ \textbf{B} _ {0} (q, |p-q|) \\
-\text{RNG}(V) & = \{ (p,q) : (p,q) \in E , \ \Lambda _ {p,q} \ \cap V = \emptyset\}
+\text{RNG}(V) & = \\{ (p,q) : (p,q) \in E , \ \Lambda _ {p,q} \ \cap V = \emptyset\\}
 \end{array}
 $$
 
@@ -141,7 +141,7 @@ of the relative neighbor graph.
 An alternative, equivalent, definition is:
 
 $$
-\text{RNG}(V) = \{ (p,q) : (p,q) \in E, |p-q| \le \max  _ {v \in V / \{p,q\} } ( |p-v|, |q-v| ) \}
+\text{RNG}(V) = \\{ (p,q) : (p,q) \in E, |p-q| \le \max  _ {v \in V / \{p,q\} } ( |p-v|, |q-v| ) \\}
 $$
 
 The Closed Venetian Pattern algorithm considers all vein nodes within the relative neighborhood
