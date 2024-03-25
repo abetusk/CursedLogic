@@ -11,6 +11,7 @@
 var g_plotter_info = {
   "pnt":[],
   "line":[],
+  "Line":[],
   "two": null,
   "data": []
 };
@@ -71,12 +72,26 @@ function _plotl(line, fx, fy) {
   g_plotter_info.line = [];
   for (let ii=0; ii<line.length; ii++) {
     g_plotter_info.line.push( new Two.Line(line[ii].x, line[ii].y, line[ii].x+line[ii].dx, line[ii].y+line[ii].dy) );
-    //g_plotter_info.line[ii].size = 3;
-    //g_plotter_info.line[ii].stroke = '#777';
-    //g_plotter_info.pnt[ii].fill = '#777';
-    //if ("c" in line[ii]) { g_plotter_info.line[ii].fill = line[ii].c; }
-    //if ("c" in line[ii]) { g_plotter_info.line[ii].stroke= line[ii].c; }
     two.add( g_plotter_info.line[ii] );
+  }
+
+}
+
+function _plotL(line, fx, fy) {
+  fx = ((typeof fx === "undefined") ? 1.0 : fx);
+  fy = ((typeof fy === "undefined") ? 1.0 : fy);
+
+  let two = g_plotter_info.two;
+  let _line = g_plotter_info.Line;
+
+  for (let ii=0; ii<_line.length; ii++) {
+    two.remove( _line[ii] );
+  }
+
+  g_plotter_info.line = [];
+  for (let ii=0; ii<line.length; ii++) {
+    g_plotter_info.Line.push( new Two.Line(line[ii].x0, line[ii].y0, line[ii].x1, line[ii].y1) );
+    two.add( g_plotter_info.Line[ii] );
   }
 
 }

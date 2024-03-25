@@ -28,23 +28,57 @@ let rho =  S / Math.sqrt(N);
 
 let VERBOSE = 0;
 
-function new_vein(info, x, y, dx, dy, p_idx) {
+function sanity_vein() {
+
+  let vein = g_info.vein;
+
+  let leaf_v = [];
+  let leaf_map = {};
+  let leaf_count=0;
+
+  for (let ii=0; ii<vein.length; ii++) {
+    let v = vein[ii];
+    if (v.state == 0) {
+      leaf_v.push(v);
+      leaf_map[ v.idx ] = 1;
+      leaf_count++;
+    }
+  }
+
+  for (let ii=0; ii<vein.length; ii++) {
+    let v = vein[ii];
+    if (v.p_idx < 0) { continue; }
+
+    if (v.p_idx in leaf_map) {
+      console.log("v", v, " has parent ", vein[v.p_idx], " but parent is leaf?");
+      return -1;
+    }
+  }
+
+  console.log(leaf_count);
+
+  return 0;
+}
+
+function new_vein(info, x, y, dx, dy, p_idx, c_idx) {
   p_idx = ((typeof p_idx === "undefined") ? -1 : p_idx);
+  c_idx = ((typeof c_idx === "undefined") ? -1 : c_idx);
   let vein_info = {
     "x" : x,
     "y" : y,
-    "p_idx": p_idx,
+    "p_idx" : p_idx,
+    "c_idx" : c_idx,
     "type"  : "vein",
     "state" : 0,
     "a_idx" : -1,
     "d"     : -1,
-    "idx"    : info.vein_id,
-    "auxin_count": 0,
-    "dir_count" : 0,
-    "orig_dx": dx,
-    "orig_dy": dy,
-    "dx"    : dx,
-    "dy"    : dy
+    "idx"   : info.vein_id,
+    "auxin_count" : 0,
+    "dir_count"   : 0,
+    "orig_dx" : dx,
+    "orig_dy" : dy,
+    "dx"      : dx,
+    "dy"      : dy
   };
 
   info.vein_id++;
@@ -60,6 +94,8 @@ let g_info = {
 
   "ds": 125,
   "max_iter" : 1000,
+
+  "rho": rho,
 
   //"r_kill": 0.5*rho,
   //"r_bias": 1.0*rho,
@@ -79,6 +115,8 @@ let g_info = {
   "parent_vein_weight": 0.0,
   "parent_vein_denom": 1,
 
+  "auxin_tree" : {},
+  "vein_tree": {},
 
   "disp_scale" : 400/S,
   "disp_dxy" : [ S / 2, S / 2 ],
@@ -106,9 +144,21 @@ function _transforml(line, dx, dy, s) {
   return line;
 }
 
-function space_col_init() {
+function _transformL(line, dx, dy, s) {
+  for (let ii=0; ii<line.length; ii++) {
+    line[ii].x0 = (line[ii].x0 + dx)*s;
+    line[ii].y0 = (line[ii].y0 + dy)*s;
 
+    line[ii].x1 = (line[ii].x1 + dx)*s;
+    line[ii].y1 = (line[ii].y1 + dy)*s;
+  }
+  return line;
+}
+
+function space_col_init() {
   let rand_alg = "halton"; // "random"
+
+  g_info.auxin = [];
 
   let tree = new qt.QuadTree( new qt.Box( g_info.bb.x, 
                                           g_info.bb.y,
@@ -175,7 +225,7 @@ function space_col_init() {
 // g_info.vein holds the vein nodes.
 //
 //
-function space_col_start() {
+function open_space_col_start() {
   let tree = g_info.auxin_tree;
 
   // root point
@@ -331,6 +381,7 @@ function space_col_start() {
           new_dy = _w*(v.y - g_info.vein[v.p_idx].y);
         }
         let dst_v = new_vein(g_info, v.x + dx, v.y + dy, new_dx, new_dy, v.idx);
+        v.state = 1;
 
         g_info.vein.push(dst_v);
 
@@ -354,12 +405,13 @@ function space_col_start() {
   }
 
   let _time_e = Date.now();
+  console.log(_time_s, _time_e, "==>", _time_e - _time_s, "ms to render");
 
-  console.log(_time_s, _time_e, "==>", _time_e - _time_s);
+  plot_auxin();
+  plot_vein();
+}
 
-
-
-  // ---disp----
+function plot_auxin() {
   let _auxin = g_info.auxin;
   let disp_pnt = [];
   for (let ii=0; ii<_auxin.length; ii++) {
@@ -373,9 +425,9 @@ function space_col_start() {
   }
   _transform(disp_pnt, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
   _plot( disp_pnt );
-  // ---disp----
+}
 
-
+function plot_vein() {
   disp_line = [];
   for (let ii=0; ii<g_info.vein.length; ii++) {
     let p_idx = g_info.vein[ii].p_idx;
@@ -396,11 +448,94 @@ function space_col_start() {
 
   _transforml(disp_line, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
   _plotl(disp_line);
+}
+
+function plot_ok(line) {
+
+  _transformL(line, g_info.disp_dxy[0], g_info.disp_dxy[1], g_info.disp_scale);
+  _plotL(line);
+}
 
 
-  return;
+function relative_neighborhood_graph() {
+  let tree = g_info.auxin_tree;
+  let auxin = g_info.auxin;
+  let vein = g_info.vein;
+
+  let bbox = new qt.Box( g_info.bb.x, 
+                         g_info.bb.y,
+                         g_info.bb.w,
+                         g_info.bb.h );
+  let vein_tree = new qt.QuadTree( bbox );
+  g_info.vein_tree = vein_tree;
+
+  g_info.vein_id = 0;
+  let root_vein = new_vein(g_info, 0, g_info.bb.y, 0, g_info.ds);
+  g_info.vein.push(root_vein);
+
+  vein_tree.insert( new qt.Point(root_vein.x, root_vein.y, root_vein) );
+
+  let query_kill = new qt.Circle(0, 0, g_info.r_kill);
+  let query_bias = new qt.Circle(0, 0, g_info.r_bias);
+  let query_nei  = new qt.Circle(0, 0, 2*g_info.rho);
+
+  if (VERBOSE > 0) {
+    console.log("# r_kill:", g_info.r_kill, ", r_bias:", g_info.r_bias);
+  }
+
+  let vein_wf = [ g_info.vein[0] ];
+
+  let _time_s = Date.now();
+
+
+  let _line = [];
+
+  for (let ii=0; ii<auxin.length; ii++) {
+    let a = auxin[ii];
+
+    query_nei.x = a.x;
+    query_nei.y = a.y;
+    let v_test = vein_tree.query( query_nei );
+
+    for (let _i=0; _i<v_test.length; _i++) {
+      let v0 = v_test[_i];
+      let d_a_v0 = Math.sqrt( (v0.x - a.x)*(v0.x - a.x) + (v0.y - a.y)*(v0.y - a.y) );
+      let rng_accept = true;
+      for (let _j=(_i+1); _j<v_test.length; _j++) {
+        let v1 = v_test[_j];
+        let d_a_v1 = Math.sqrt( (v1.x - a.x)*(v1.x - a.x) + (v1.y - a.y)*(v1.y - a.y) );
+        let d_v0_v1 = Math.sqrt( (v1.x - v0.x)*(v1.x - v0.x) + (v1.y - v0.y)*(v1.y - v0.y) );
+
+        let d = d_a_v1;
+        if (d_v0_v1 > d)  { d = d_v0_v1; }
+
+        if (d >= d_a_v0) { rng_accept = false; break; }
+      }
+
+      if (rng_accept) {
+        console.log(ii, "a", a, "--rng--", v0);
+
+        _line.push( {"c": "#877", "x0": a.x, "y0": a.y, "x1": v0.x, "y1": v0.y } );
+      }
+    }
+
+  }
+
+  let x = tree.query( query_nei );
+  console.log(">>", x);
+
+  plot_auxin();
+  plot_ok(_line);
 
 }
-//space_col_init();
+
+var __iter_iter=0;
+function __iter() {
+  __iter_iter++;
+
+  space_col_init();
+  relative_neighborhood_graph();
+
+}
 
 
