@@ -194,6 +194,7 @@ function space_col_init() {
       "type": "auxin",
       "state": 0,
       "d": -1,
+      "v_list": [],
       "v_idx": -1
     };
     g_info.auxin.push( new qt.Point(_x,_y, pnt_info) );
@@ -488,44 +489,81 @@ function relative_neighborhood_graph() {
   let _time_s = Date.now();
 
 
-  let _line = [];
+  for (let it=0; it<2; it++) {
 
-  for (let ii=0; ii<auxin.length; ii++) {
-    let a = auxin[ii];
+    let _line = [];
 
-    query_nei.x = a.x;
-    query_nei.y = a.y;
-    let v_test = vein_tree.query( query_nei );
+    let vein_visited = {};
+    let vein_queue = [];
 
-    for (let _i=0; _i<v_test.length; _i++) {
-      let v0 = v_test[_i];
-      let d_a_v0 = Math.sqrt( (v0.x - a.x)*(v0.x - a.x) + (v0.y - a.y)*(v0.y - a.y) );
-      let rng_accept = true;
-      for (let _j=(_i+1); _j<v_test.length; _j++) {
-        let v1 = v_test[_j];
-        let d_a_v1 = Math.sqrt( (v1.x - a.x)*(v1.x - a.x) + (v1.y - a.y)*(v1.y - a.y) );
-        let d_v0_v1 = Math.sqrt( (v1.x - v0.x)*(v1.x - v0.x) + (v1.y - v0.y)*(v1.y - v0.y) );
+    for (let ii=0; ii<auxin.length; ii++) {
+      let a = auxin[ii];
 
-        let d = d_a_v1;
-        if (d_v0_v1 > d)  { d = d_v0_v1; }
+      a.v_list = [];
 
-        if (d >= d_a_v0) { rng_accept = false; break; }
+      query_nei.x = a.x;
+      query_nei.y = a.y;
+      let v_test = vein_tree.query( query_nei );
+
+      for (let _i=0; _i<v_test.length; _i++) {
+        let v0 = v_test[_i];
+        let d_a_v0 = Math.sqrt( (v0.x - a.x)*(v0.x - a.x) + (v0.y - a.y)*(v0.y - a.y) );
+        let rng_accept = true;
+        for (let _j=(_i+1); _j<v_test.length; _j++) {
+          let v1 = v_test[_j];
+          let d_a_v1 = Math.sqrt( (v1.x - a.x)*(v1.x - a.x) + (v1.y - a.y)*(v1.y - a.y) );
+          let d_v0_v1 = Math.sqrt( (v1.x - v0.x)*(v1.x - v0.x) + (v1.y - v0.y)*(v1.y - v0.y) );
+
+          let d = d_a_v1;
+          if (d_v0_v1 > d)  { d = d_v0_v1; }
+
+          if (d >= d_a_v0) { rng_accept = false; break; }
+        }
+
+        if (rng_accept) {
+          console.log(ii, "a", a, "--rng--", v0);
+
+          _line.push( {"c": "#877", "x0": a.x, "y0": a.y, "x1": v0.x, "y1": v0.y } );
+
+          let dav = [ a.x - v0.x, a.y - v0.y ];
+          let _d = Math.sqrt( dav.x * dav.x + dav.y * dav.y );
+          if (_d < (1/1024)) { _d = 0; }
+          else { _d = 1/_d; }
+
+          v0.dir_count++;
+          v0.x += _d*dav.x;
+          v0.y += _d*dav.y;
+
+          a.v_list.push( v0.data.idx );
+
+          if ( !(v0.data.idx in vein_visited) ) {
+            vein_visited[v0.data.idx] = 1;
+            vein_queue.push(v0);
+          }
+
+        }
       }
 
-      if (rng_accept) {
-        console.log(ii, "a", a, "--rng--", v0);
-
-        _line.push( {"c": "#877", "x0": a.x, "y0": a.y, "x1": v0.x, "y1": v0.y } );
-      }
     }
 
+    for (let ii=0; ii<vein_queue.length; ii++) {
+      let v = vein_queue[ii];
+
+      v.x /= v.dir_count;
+      v.y /= v.dir_count;
+
+      let nv = new_vein(g_info, v.x, v.y, v.idx, g_info.ds);
+
+
+    }
+
+    let x = tree.query( query_nei );
+    console.log(">>", x);
+
+    plot_auxin();
+    plot_ok(_line);
+
   }
-
-  let x = tree.query( query_nei );
-  console.log(">>", x);
-
-  plot_auxin();
-  plot_ok(_line);
 
 }
 
