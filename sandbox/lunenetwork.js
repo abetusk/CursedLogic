@@ -153,8 +153,8 @@ function in_lune(pnt_a, pnt_b, tst_c) {
   let dist_cb = njs.norm2( njs.sub(tst_c, pnt_b) );
   let dist_ab = njs.norm2( njs.sub(pnt_a, pnt_b) );
 
-  console.log("# pnt_a(", pnt_a, "), pnt_b(", pnt_b, "), tst_c(", tst_c, ")");
-  console.log("# dist_ca:", dist_ca, "dist_cb:", dist_cb, "dist_ab:", dist_ab);
+  //console.log("# pnt_a(", pnt_a, "), pnt_b(", pnt_b, "), tst_c(", tst_c, ")");
+  //console.log("# dist_ca:", dist_ca, "dist_cb:", dist_cb, "dist_ab:", dist_ab);
 
   if ((dist_ca <= dist_ab) &&
       (dist_cb <= dist_ab)) {
@@ -417,6 +417,117 @@ function octant_index_2d(p,q) {
   return octant_lookup[idx];
 }
 
+var _debug_stat = {
+  "count": {},
+  "val": {}
+};
+
+var prof_ctx = {
+};
+
+function prof_s(ctx, name) {
+  if (!(name in ctx)) {
+    ctx[name] = { "s": 0, "e": 0, "c": 0, "t":0 };
+  }
+  ctx[name].s = Date.now();
+  return ctx[name].s
+}
+
+function prof_e(ctx, name) {
+  ctx[name].e = Date.now();
+  ctx[name].t += (ctx[name].e - ctx[name].s);
+  ctx[name].c++;
+  return ctx[name].e;
+}
+
+function prof_avg(ctx, name) {
+  if (!(name in ctx)) { return 0; }
+  if (ctx[name].c == 0) { return 0; }
+  return ctx[name].t / (1000*ctx[name].c);
+}
+
+function prof_reset(ctx) {
+  for (let name in ctx) {
+    ctx[name].s = 0;
+    ctx[name].e = 0;
+    ctx[name].t = 0;
+    ctx[name].c = 0;
+  }
+  return ctx;
+}
+
+function prof_print(ctx) {
+  for (let name in ctx) {
+    console.log("#", name, (ctx[name].t / ctx[name].c) / 1000, "s", "(", ctx[name].t, "/", ctx[name].c, ")");
+  }
+}
+
+function perf_experiment() {
+
+  let NREP = 10;
+  for (let n=1000; n<20001; n+=1000) {
+
+
+    for (let rep=0; rep<NREP; rep++) {
+      prof_s(prof_ctx, "tot");
+      gen_instance_2d(n, [[0,0],[1,1]]);
+      prof_e(prof_ctx, "tot");
+    }
+
+    console.log("#n:", n);
+
+    console.log(n, prof_avg(prof_ctx, "tot"));
+
+    //prof_print(prof_ctx);
+    prof_reset(prof_ctx);
+    //console.log("\n#---\n");
+  }
+  process.exit();
+
+}
+
+//perf_experiment();
+
+// this looks like it scales as O(n^2) and I'm not so
+// clear as to why. The original algorithm by Katajainen and
+// Nevalamen needed to take special consideration for
+// points near the grid boundaries, so that's might be
+// what's going on.
+//
+// Some suspicious behavior:
+//
+// Looking at how many comparisons are done for points
+// in grid cell locations, it looks like points near
+// [grid_n-1,*] and even more so near [grid_n-1,grid_n-1]
+// take more time than others.
+//
+// I don't know why there would be an assymetry here.
+// If points near the edge have issues, it should be
+// symmetric.
+//
+// So this means there's something I really don't understand
+// or there's a bug somewhere.
+//
+// update:
+// I was using grid_s to scale points and I've switched it to grid_n.
+// This mitigates the issue but there still looks to be an ever
+// so slight bias as now in the positive x direction and the
+// near 0 direction...
+//
+// This might be on account of the ordering used to resolve the wedges.
+//
+// The increasing size perf experiments were jagged, with quadratic
+// increases, then jumps down, then creeping back up.
+// This is most likely due to artifacts from choosing grid_s as opposed
+// to grid_n, where the gap from grid_s and grid_n was causing points
+// on the periphery to take more time. When the point count got
+// closer to a perfect square, the gap would close, causing the
+// decrease in run time.
+//
+// I still don't understand why points on the edges aren't taking
+// more time.
+//
+//
 function gen_instance_2d(n, B) {
 
   let info = {
@@ -441,6 +552,12 @@ function gen_instance_2d(n, B) {
   info.grid_n = grid_n;
   info.grid_s = grid_s;
 
+
+  //PROFILING
+  prof_s(prof_ctx, "init_grid");
+  //PROFILING
+
+
   for (let i=0; i<grid_n; i++) {
     info.grid.push([]);
     for (let j=0; j<grid_n; j++) {
@@ -462,17 +579,40 @@ function gen_instance_2d(n, B) {
     info.edge.push([]);
   }
 
+  //PROFILING
+  prof_e(prof_ctx, "init_grid");
+  //PROFILING
+
+  //PROFILING
+  prof_s(prof_ctx, "setup");
+  //PROFILING
+
+
   for (let i=0; i<n; i++) {
-    let ix = Math.floor(info.point[i][0]*grid_s);
-    let iy = Math.floor(info.point[i][1]*grid_s);
+    //let ix = Math.floor(info.point[i][0]*grid_s);
+    //let iy = Math.floor(info.point[i][1]*grid_s);
+    let ix = Math.floor(info.point[i][0]*grid_n);
+    let iy = Math.floor(info.point[i][1]*grid_n);
     info.grid[iy][ix].push(i);
     info.point_grid_bp[i] = [ix,iy];
   }
 
+  //PROFILING
+  prof_e(prof_ctx, "setup");
+  //PROFILING
+
+
   let P = info.point;
   let G = info.grid;
 
-  //console.log("# ds:", ds, "grid_s:", grid_s);
+  let E = [];
+
+  console.log("# ds:", ds, "grid_s:", grid_s);
+
+
+  //PROFILING
+  prof_s(prof_ctx, "main_loop");
+  //PROFILING
 
   for (let p_idx=0; p_idx < P.length; p_idx++) {
     let pnt = P[p_idx];
@@ -485,69 +625,78 @@ function gen_instance_2d(n, B) {
     let i_anch_x = Math.floor(pnt[0] / ds);
     let i_anch_y = Math.floor(pnt[1] / ds);
 
-    // just easier to enumerate all points in initial 3x3 grid region
+    //STAT
     //
-    for (let idy=-1; idy<2; idy++) {
-      for (let idx=-1; idx<2; idx++) {
+    /*
+    let _min_dist = i_anch_x;
+    if ( (grid_n-i_anch_x)  < _min_dist ) { _min_dist = (grid_n-i_anch_x); }
+    if ( (i_anch_y)         < _min_dist ) { _min_dist = (i_anch_y); }
+    if ( (grid_n-i_anch_y)  < _min_dist ) { _min_dist = (grid_n-i_anch_y); }
+    if (!(_min_dist in _debug_stat.count)) {
+      _debug_stat.count[_min_dist] = 0;
+      _debug_stat.val[_min_dist] = 0;
+    }
+    _debug_stat.count[_min_dist]++;
+    */
+    let key = i_anch_x.toString() + " " + i_anch_y.toString();
+    if (!(key in _debug_stat.count)) {
+      _debug_stat.count[key] = 0;
+      _debug_stat.val[key] = 0;
+    }
+    _debug_stat.count[key]++;
+    //
+    //STAT
 
-        let ix = i_anch_x + idx;
-        let iy = i_anch_y + idy;
+    //PROFILING
+    prof_s(prof_ctx, "main_loop.0");
+    //PROFILING
 
-        if ((ix < 0) || (ix >= grid_n) ||
-            (iy < 0) || (iy >= grid_n)) { continue; }
 
-        for (let g_idx=0; g_idx < G[iy][ix].length; g_idx++) {
-          let q_idx = G[iy][ix][g_idx];
-          if (q_idx == p_idx) { continue; }
+    for (let g_idx=0; g_idx < G[i_anch_y][i_anch_x].length; g_idx++) {
+      let q_idx = G[i_anch_y][i_anch_x][g_idx];
+      if (q_idx == p_idx) { continue; }
 
-          let r_idx = octant_index_2d( P[p_idx], P[q_idx] );
-          if (wedge_nei[r_idx] < 0) {
-            wedge_nei[r_idx] = q_idx;
-            resolved_count++;
-            continue;
-          }
-
-          let d_prv = njs.norm2( njs.sub(P[p_idx], P[wedge_nei[r_idx]]) );
-          let d_cur = njs.norm2( njs.sub(P[p_idx], P[q_idx]) );
-
-          if (d_cur < d_prv) {
-            wedge_nei[r_idx] = q_idx;
-          }
-        }
-
+      let r_idx = octant_index_2d( P[p_idx], P[q_idx] );
+      if (wedge_nei[r_idx] < 0) {
+        wedge_nei[r_idx] = q_idx;
+        resolved_count++;
+        continue;
       }
 
+      let d_prv = njs.norm2( njs.sub(P[p_idx], P[wedge_nei[r_idx]]) );
+      let d_cur = njs.norm2( njs.sub(P[p_idx], P[q_idx]) );
+
+      if (d_cur < d_prv) {
+        wedge_nei[r_idx] = q_idx;
+      }
     }
 
-    //console.log("# p_idx:", p_idx, P[p_idx], "wedge_nei:", wedge_nei);
+    //PROFILING
+    prof_e(prof_ctx, "main_loop.0");
+    //PROFILING
 
-    for (let r_idx=0; r_idx<8; r_idx++) {
+    //PROFILING
+    prof_s(prof_ctx, "main_loop.1");
+    //PROFILING
 
-      if (wedge_nei[r_idx] == -1) { continue; }
+    if (resolved_count < 8) {
 
-      for (let ir=2; ir<grid_n; ir++) {
-        let wedge_info = grid_sweep_2d(info, P[p_idx], ir, r_idx);
+      // just easier to enumerate all points in initial 3x3 grid region
+      //
+      for (let idx_y=-1; idx_y<2; idx_y++) {
+        for (let idx_x=-1; idx_x<2; idx_x++) {
 
-        //console.log(">> ir:", ir, "wedge_info:", wedge_info);
+          let ix = i_anch_x + idx_x;
+          let iy = i_anch_y + idx_y;
 
-        if (wedge_info.path.length == 0) {
-          wedge_nei[r_idx] = -1;
-          resolved_count++;
-          break;
-        }
+          if ((ix < 0) || (ix >= grid_n) ||
+              (iy < 0) || (iy >= grid_n)) { continue; }
 
-        for (let w_idx=0; w_idx < wedge_info.path.length; w_idx++) {
-          let grid_point = wedge_info.path[w_idx];
-          let ix = grid_point[0];
-          let iy = grid_point[1];
-
-          console.log("#>>>>", ix, iy, "grid_n:", grid_n);
-
-          for (let g_idx=0; g_idx<G[iy][ix].length; g_idx++) {
+          for (let g_idx=0; g_idx < G[iy][ix].length; g_idx++) {
             let q_idx = G[iy][ix][g_idx];
-            let qr_idx = octant_index_2d( P[p_idx], P[q_idx] );
-            if (qr_idx != r_idx) { continue; }
+            if (q_idx == p_idx) { continue; }
 
+            let r_idx = octant_index_2d( P[p_idx], P[q_idx] );
             if (wedge_nei[r_idx] < 0) {
               wedge_nei[r_idx] = q_idx;
               resolved_count++;
@@ -560,51 +709,207 @@ function gen_instance_2d(n, B) {
             if (d_cur < d_prv) {
               wedge_nei[r_idx] = q_idx;
             }
-
           }
 
         }
 
-        // we've reached the end and haven't found any points in this wedge
-        //
-        if ((ir == (grid_n-1)) &&
-            (wedge_nei[r_idx] == -2)) {
-          wedge_nei[r_idx] = -1;
+      }
+
+    }
+
+    //PROFILING
+    prof_e(prof_ctx, "main_loop.1");
+    //PROFILING
+
+    //console.log("# p_idx:", p_idx, P[p_idx], "wedge_nei:", wedge_nei);
+
+    //PROFILING
+    prof_s(prof_ctx, "main_loop.2");
+    //PROFILING
+
+    if (resolved_count < 8) {
+
+      for (let r_idx=0; r_idx<8; r_idx++) {
+
+        if (resolved_count==8) { break; }
+
+        if (wedge_nei[r_idx] == -1) { continue; }
+        if (wedge_nei[r_idx] >= 0) { continue; }
+
+        for (let ir=2; ir<grid_n; ir++) {
+          if (resolved_count==8) { break; }
+
+          let wedge_info = grid_sweep_2d(info, P[p_idx], ir, r_idx);
+
+          //STAT
+          //
+          //_debug_stat.val[_min_dist]++;
+          _debug_stat.val[key]++;
+          //
+          //STAT
+
+          //console.log(">> ir:", ir, "wedge_info:", wedge_info);
+
+          if (wedge_info.path.length == 0) {
+            if (wedge_nei[r_idx] == -2) {
+              wedge_nei[r_idx] = -1;
+              resolved_count++;
+            }
+            break;
+          }
+
+          for (let w_idx=0; w_idx < wedge_info.path.length; w_idx++) {
+            let grid_point = wedge_info.path[w_idx];
+            let ix = grid_point[0];
+            let iy = grid_point[1];
+
+            //console.log("#>>>>", ix, iy, "grid_n:", grid_n);
+
+            for (let g_idx=0; g_idx<G[iy][ix].length; g_idx++) {
+              let q_idx = G[iy][ix][g_idx];
+              let qr_idx = octant_index_2d( P[p_idx], P[q_idx] );
+              if (qr_idx != r_idx) { continue; }
+
+              if (wedge_nei[r_idx] < 0) {
+                wedge_nei[r_idx] = q_idx;
+                resolved_count++;
+                continue;
+              }
+
+              let d_prv = njs.norm2( njs.sub(P[p_idx], P[wedge_nei[r_idx]]) );
+              let d_cur = njs.norm2( njs.sub(P[p_idx], P[q_idx]) );
+
+              if (d_cur < d_prv) {
+                wedge_nei[r_idx] = q_idx;
+              }
+
+            }
+
+          }
+
+          // we've reached the end and haven't found any points in this wedge
+          //
+          if ((ir == (grid_n-1)) &&
+              (wedge_nei[r_idx] == -2)) {
+            resolved_count++;
+            wedge_nei[r_idx] = -1;
+          }
+
         }
-
       }
+
     }
 
-    console.log("# p_idx:", p_idx, "pnt:", pnt, "resolved:", resolved_count);
+    //PROFILING
+    prof_e(prof_ctx, "main_loop.2");
+    //PROFILING
 
+
+    // DEBUG PRINT
+    //
+    let _debug_octant = false;
+    if (_debug_octant) {
+      console.log("# p_idx:", p_idx, "pnt:", pnt, "resolved:", resolved_count);
+
+      let _f = 1/64;
+      let _dxy = [ _f*Math.random(), _f*Math.random() ];
+
+      for (let r_idx=0; r_idx<8; r_idx++) {
+        let q_idx = wedge_nei[r_idx];
+        if (q_idx == -2) {
+          console.log("### ERROR!!!", "p_idx:", p_idx, P[p_idx], "q_idx:", q_idx, "r_idx:", r_idx);
+          return;
+        }
+        if (q_idx == -1) { continue; }
+        console.log(P[p_idx][0] + _dxy[0], P[p_idx][1] + _dxy[1]);
+        console.log(P[q_idx][0] + _dxy[0], P[q_idx][1] + _dxy[1]);
+        console.log("");
+      }
+
+    }
+
+    //PROFILING
+    prof_s(prof_ctx, "main_loop.lune_test");
+    //PROFILING
+
+    // now that we have fully resolved occupancy of the wedge regions,
+    // we go through and test for rng connections
+    //
+    let nei_pnt = [],
+        nei_idx = [];
     for (let r_idx=0; r_idx<8; r_idx++) {
+      if (wedge_nei[r_idx] < 0) { continue; }
+
       let q_idx = wedge_nei[r_idx];
-      if (q_idx == -2) {
-        console.log("### ERROR!!!", "p_idx:", p_idx, P[p_idx], "q_idx:", q_idx, "r_idx:", r_idx);
-        return;
-      }
-      if (q_idx == -1) { continue; }
-      console.log(P[p_idx][0], P[p_idx][1]);
-      console.log(P[q_idx][0], P[q_idx][1]);
-      console.log("");
+
+      nei_idx.push(q_idx);
+      nei_pnt.push( P[q_idx] );
     }
+
+    for (let i=0; i<nei_pnt.length; i++) {
+      let _found = true;
+      for (let j=0; j<nei_pnt.length; j++) {
+        if (i==j) { continue; }
+        if (in_lune(P[p_idx], nei_pnt[i], nei_pnt[j])) {
+          _found = false;
+          break;
+        }
+      }
+      if (_found) {
+        E.push([p_idx, nei_idx[i]]);
+      }
+    }
+
+    //PROFILING
+    prof_e(prof_ctx, "main_loop.lune_test");
+    //PROFILING
+
+
 
   }
 
-  for (let iy=0; iy<grid_n; iy++) {
-    for (let ix=0; ix<grid_n; ix++) {
+  //PROFILING
+  prof_e(prof_ctx, "main_loop");
+  //PROFILING
 
-      console.log( ix*ds, iy*ds);
-      console.log( (ix+1)*ds, iy*ds);
-      console.log("");
-      console.log( ix*ds, iy*ds);
-      console.log( ix*ds, (iy+1)*ds);
-      console.log("");
 
-      for (let ii=0; ii<info.grid[iy][ix].length; ii++) {
-        let idx = info.grid[iy][ix][ii];
-        let p = info.point[idx];
-        console.log("#", ii, ix, iy, "-> [", p[0],p[1] ,"] {", idx, "}");
+  let _debug_edge = false;
+  if (_debug_edge) {
+    for (let e_idx=0; e_idx<E.length; e_idx++) {
+      let p_idx = E[e_idx][0];
+      let q_idx = E[e_idx][1];
+
+      let p = P[p_idx];
+      let q = P[q_idx];
+
+      let _f = 1/64;
+      _f = 0;
+      let _dxy = [_f*Math.random(), _f*Math.random()];
+
+      console.log(p[0] + _dxy[0], p[1] + _dxy[1]);
+      console.log(q[0] + _dxy[0], q[1] + _dxy[1]);
+      console.log("");
+    }
+  }
+
+  let _debug_grid = false;
+  if (_debug_grid) {
+    for (let iy=0; iy<grid_n; iy++) {
+
+      for (let ix=0; ix<grid_n; ix++) {
+
+        console.log( ix*ds, iy*ds);
+        console.log( (ix+1)*ds, iy*ds);
+        console.log("");
+        console.log( ix*ds, iy*ds);
+        console.log( ix*ds, (iy+1)*ds);
+        console.log("");
+
+        for (let ii=0; ii<info.grid[iy][ix].length; ii++) {
+          let idx = info.grid[iy][ix][ii];
+          let p = info.point[idx];
+          console.log("#", ii, ix, iy, "-> [", p[0],p[1] ,"] {", idx, "}");
+        }
       }
     }
   }
@@ -612,11 +917,555 @@ function gen_instance_2d(n, B) {
   return info;
 }
 
+function grid_sweep_perim_2d(ctx, pnt, ir) {
+  let face_dir = [
+    [ 0, 1],
+    [-1, 0],
+    [ 0,-1],
+    [ 1, 0]
+  ];
 
-let info = gen_instance_2d(10);
-print_point(info.point, 1);
+  let cell_size = ctx.grid_cell_size;
+
+  let cell_offset = [0,0];
+
+  let ipnt = [
+    Math.floor(pnt[0] / cell_size[0]),
+    Math.floor(pnt[1] / cell_size[1])
+  ];
+
+  // fence is r, u, l, d
+  //   [p0 , v] (p0 + v(t))
+  //
+  // in world coordinates
+  //
+  let info = {
+    "path": [],
+    "p": [ pnt[0], pnt[1] ],
+    "i_p": [ ipnt[0], ipnt[1] ],
+    "fence" : [
+      [[0,0], [0,0]],
+      [[0,0], [0,0]],
+      [[0,0], [0,0]],
+      [[0,0], [0,0]]
+    ],
+    "perim_bbox": [],
+    "n": 0
+  };
+
+  let grid_bbox = [ [ 0, 0 ], [ ctx.grid_n, ctx.grid_n ] ];
+
+
+  let perim_bbox = [
+    [ ipnt[0] - ir, ipnt[1] - ir ],
+    [ ipnt[0] + ir + 1, ipnt[1] + ir + 1]
+  ];
+
+  if (perim_bbox[0][0] < grid_bbox[0][0]) { perim_bbox[0][0] = grid_bbox[0][0]; }
+  if (perim_bbox[0][1] < grid_bbox[0][1]) { perim_bbox[0][1] = grid_bbox[0][1]; }
+
+  if (perim_bbox[1][0] > grid_bbox[1][0]) { perim_bbox[1][0] = grid_bbox[1][0]; }
+  if (perim_bbox[1][1] > grid_bbox[1][1]) { perim_bbox[1][1] = grid_bbox[1][1]; }
+
+  info.perim_bbox = perim_bbox;
+
+  // right fence, lower right start, move up
+  //
+  info.fence[0][0][0] = perim_bbox[1][0]*cell_size[0] + cell_offset[0];
+  info.fence[0][0][1] = perim_bbox[0][1]*cell_size[1] + cell_offset[1];
+
+  info.fence[0][1][0] = 0;
+  info.fence[0][1][1] = (perim_bbox[1][1] - perim_bbox[0][1])*cell_size[1] ;
+
+  // top fence, upper right, move left
+  //
+  info.fence[1][0][0] = perim_bbox[1][0]*cell_size[0] + cell_offset[0];
+  info.fence[1][0][1] = perim_bbox[1][1]*cell_size[1] + cell_offset[1];
+
+  info.fence[1][1][0] = (perim_bbox[0][0] - perim_bbox[1][0])*cell_size[0];
+  info.fence[1][1][1] = 0;
+
+  // left fence, upper left, move down
+  //
+  info.fence[2][0][0] = perim_bbox[0][0]*cell_size[0] + cell_offset[0];
+  info.fence[2][0][1] = perim_bbox[1][1]*cell_size[1] + cell_offset[1];
+
+  info.fence[2][1][0] = 0;
+  info.fence[2][1][1] = (perim_bbox[0][1] - perim_bbox[1][1])*cell_size[1];
+
+  // bottom fence, lower left, move right
+  //
+  info.fence[3][0][0] = perim_bbox[0][0]*cell_size[0] + cell_offset[0];
+  info.fence[3][0][1] = perim_bbox[0][1]*cell_size[1] + cell_offset[1];
+
+  info.fence[3][1][0] = (perim_bbox[1][0] - perim_bbox[0][0])*cell_size[0];
+  info.fence[3][1][1] = 0;
+
+
+  console.log("#bbox: [[", perim_bbox[0][0], perim_bbox[0][1], "],[", perim_bbox[1][0], perim_bbox[1][1], "]], ipnt:", ipnt);
+
+  let dx = perim_bbox[1][0] - perim_bbox[0][0],
+      dy = perim_bbox[1][1] - perim_bbox[0][1];
+
+  let ix = perim_bbox[0][0],
+      iy = perim_bbox[0][1];
+  for (ix=perim_bbox[0][0]; ix<perim_bbox[1][0]; ix++) {
+    let idx = info.path.length-1;
+    if ((idx >= 0) &&
+        (info.path[idx][0] == ix) &&
+        (info.path[idx][1] == iy)) { continue; }
+    info.path.push([ix,iy]);
+  }
+
+  ix = perim_bbox[1][0]-1;
+  for (iy=perim_bbox[0][1]; iy<perim_bbox[1][1]; iy++) {
+    let idx = info.path.length-1;
+    if ((idx >= 0) &&
+        (info.path[idx][0] == ix) &&
+        (info.path[idx][1] == iy)) { continue; }
+    info.path.push([ix,iy]);
+  }
+
+  iy = perim_bbox[1][1]-1;
+  for (ix=(perim_bbox[1][0]-1); ix>=perim_bbox[0][0]; ix--) {
+    let idx = info.path.length-1;
+    if ((idx >= 0) &&
+        (info.path[idx][0] == ix) &&
+        (info.path[idx][1] == iy)) { continue; }
+    info.path.push([ix,iy]);
+  }
+
+  ix = perim_bbox[0][0];
+  for (iy=(perim_bbox[1][1]-1); iy>=perim_bbox[0][1]; iy--) {
+    let idx = info.path.length-1;
+    if ((idx >= 0) &&
+        (info.path[idx][0] == ix) &&
+        (info.path[idx][1] == iy)) { continue; }
+    info.path.push([ix,iy]);
+  }
+
+  return info;
+}
+
+function test_grid_sweep_perim_2d() {
+  let n = 107;
+  let m = Math.ceil(Math.sqrt(n));
+  let ctx = {
+    "grid_cell_size": [ 1/m, 1/m ],
+    "grid_n": m,
+    "n" : n
+  };
+
+  let p = [ Math.random(), Math.random() ];
+  //p = [ 0.7564873100990699, 0.6250385838518433 ];
+  //p = [ 0.99, 0.99 ];
+  //p = [ 0, 0.99];
+  //p = [ .99, 0];
+  //p = [0,0];
+
+  let ir = 1;
+  let info = grid_sweep_perim_2d(ctx, p, ir);
+
+  console.log(info.i_p[0], info.i_p[1], "\n\n");
+
+  console.log("# n:", ctx.n, "grid_n:", ctx.grid_n, "p:", p, "ir:", ir);
+  for (let i=0; i<info.path.length; i++) {
+    console.log(info.path[i][0], info.path[i][1]);
+  }
+
+  console.log("\n\n");
+  console.log(p[0], p[1]);
+  console.log("\n");
+  for (let i=0; i<info.fence.length; i++) {
+    let dxy = [ Math.random()/64, Math.random()/64 ];
+    dxy = [0,0];
+    let pv = info.fence[i];
+    console.log(pv[0][0] + dxy[0], pv[0][1] + dxy[1] );
+    console.log(pv[0][0] + pv[1][0] + dxy[0], pv[0][1] + pv[1][1] + dxy[1] );
+    console.log("\n");
+  }
+
+}
+
+function print_fence(fence) {
+  for (let i=0; i<fence.length; i++) {
+    let dxy = [ Math.random()/64, Math.random()/64 ];
+    dxy = [0,0];
+    let pv = fence[i];
+    console.log(pv[0][0] + dxy[0], pv[0][1] + dxy[1] );
+    console.log(pv[0][0] + pv[1][0] + dxy[0], pv[0][1] + pv[1][1] + dxy[1] );
+    console.log("\n");
+  }
+
+}
+
+function fence_experiment() {
+  let n = 107;
+  let m = Math.ceil(Math.sqrt(n));
+  let ds = 1/m;
+  let ctx = {
+    "grid_cell_size": [ 1/m, 1/m ],
+    "grid_n": m,
+    "n" : n
+  };
+
+  let s2 = Math.sqrt(2)/2;
+  let v_lookup = [
+    [ s2, -s2 ],
+    [-s2,  s2 ],
+
+    [ s2,  s2 ],
+    [-s2, -s2 ],
+
+    [-s2,  s2 ],
+    [ s2, -s2 ],
+
+    [-s2, -s2 ],
+    [ s2,  s2 ]
+  ];
+
+  let p = [ Math.random(), Math.random() ];
+  let q = [0,0];
+
+  // R0
+  q = [ p[0] + ds/2, p[1] + ds/3 ];
+
+  // R1
+  q = [ p[0] + ds/3 , p[1] + ds/2 ]
+
+  // R2
+  q = [ p[0] - ds/3 , p[1] + ds/2 ]
+
+  // R3
+  q = [ p[0] - ds/2 , p[1] + ds/3 ]
+
+  // R4
+  q = [ p[0] - ds/2 , p[1] - ds/3 ]
+
+  // R5
+  q = [ p[0] - ds/3 , p[1] - ds/2 ]
+
+  // R6
+  q = [ p[0] + ds/3 , p[1] - ds/2 ]
+
+  // R7
+  q = [ p[0] + ds/2 , p[1] - ds/3 ]
+
+  let ir = 0;
+  let info = grid_sweep_perim_2d(ctx, p, ir);
+
+  let Rk = octant_index_2d(p,q);
+
+  let v = v_lookup[Rk];
+
+  let l0 = Math.abs(p[0] - (ds*info.perim_bbox[0][0]));
+  let _l = Math.abs(p[0] - (ds*info.perim_bbox[1][0]));
+  if ( _l < l0) { l0 = _l; }
+
+  _l = Math.abs(p[1] - (ds*info.perim_bbox[0][1]));
+  if ( _l < l0) { l0 = _l; }
+
+  _l = Math.abs(p[1] - (ds*info.perim_bbox[1][1]));
+  if ( _l < l0) { l0 = _l; }
+
+  console.log("# l0:", l0);
+
+  let pi4 = Math.PI/4;
+
+  let _u = njs.sub(p,q);
+  let u = [0,0];
+
+  let _a = Math.atan2(_u[1], _u[0]);
+  let _a_idx = Math.floor((_a + Math.PI) / pi4);
+  if ((_a_idx % 2) == 0) {
+    u = njs.mul( 1/njs.norm2(_u), [-_u[1],  _u[0] ] );
+  }
+  else {
+    u = njs.mul( 1/njs.norm2(_u), [ _u[1], -_u[0] ] );
+  }
+
+  let t0 = ((v[0]*(q[1] - p[1])) - (v[1]*(q[0] - p[0]))) / ((v[1]*u[0]) - (v[0]*u[1]));
+
+  let sq = njs.add(q, njs.mul(t0, u));
+  let t1 = njs.dot(v, njs.sub(sq, p));
+  //let tI = Math.ceil( (Math.sqrt(2)*t1) - l0 ) + 1;
+
+  let p1 = njs.sub(p, njs.mul( Math.sqrt(2)*l0, v ));
+  let tI = Math.ceil(njs.dot(v, njs.mul( 1/(ds*Math.sqrt(2)), njs.sub( sq, p1 ) ))) + 1;
+
+  console.log("# lil fence");
+  console.log(p[0] + l0, p[1] + l0);
+  console.log(p[0] - l0, p[1] + l0, "\n");
+  console.log(p[0] - l0, p[1] - l0);
+  console.log(p[0] + l0, p[1] - l0, "\n");
+  console.log(p[0] - l0, p[1] + l0);
+  console.log(p[0] - l0, p[1] - l0, "\n");
+  console.log(p[0] + l0, p[1] + l0);
+  console.log(p[0] + l0, p[1] - l0, "\n");
+
+  let _dl = l0 + ds;
+  console.log(p[0] + _dl, p[1] + _dl);
+  console.log(p[0] - _dl, p[1] + _dl, "\n");
+  console.log(p[0] - _dl, p[1] - _dl);
+  console.log(p[0] + _dl, p[1] - _dl, "\n");
+  console.log(p[0] - _dl, p[1] + _dl);
+  console.log(p[0] - _dl, p[1] - _dl, "\n");
+  console.log(p[0] + _dl, p[1] + _dl);
+  console.log(p[0] + _dl, p[1] - _dl, "\n");
+
+  _dl = l0 + 2*ds;
+  console.log(p[0] + _dl, p[1] + _dl);
+  console.log(p[0] - _dl, p[1] + _dl, "\n");
+  console.log(p[0] - _dl, p[1] - _dl);
+  console.log(p[0] + _dl, p[1] - _dl, "\n");
+  console.log(p[0] - _dl, p[1] + _dl);
+  console.log(p[0] - _dl, p[1] - _dl, "\n");
+  console.log(p[0] + _dl, p[1] + _dl);
+  console.log(p[0] + _dl, p[1] - _dl, "\n");
+
+  console.log("#??", njs.norm2(u), njs.norm2(v), njs.dot(u,u), njs.dot(v,v));
+
+  console.log("# Rk:", Rk, "v:", v, "u:", u, "t0:", t0, "sq:", sq, "t1:", t1, "tI:", tI);
+  console.log("####", njs.add(q, njs.mul(t0, u)), njs.add(p, njs.mul(t1, v)));
+
+  console.log(p[0], p[1]);
+  console.log(p[0] + ds*v[0], p[1] + ds*v[1], "\n");
+
+  console.log(q[0], q[1]);
+  console.log(q[0] + ds*u[0], q[1] + ds*u[1], "\n");
+  
+  console.log(q[0], q[1]);
+  console.log(q[0] + u[0]*t0, q[1] + u[1]*t0, "\n");
+
+  console.log(p[0], p[1]);
+  console.log(p[0] + v[0]*t1, p[1] + v[1]*t1, "\n");
+
+
+  console.log("# tI:", tI);
+  console.log(p[0], p[1]);
+  console.log(p[0] + v[0]*(tI*ds), p[1] + v[1]*(tI*ds), "\n");
+
+  console.log("# tI:", tI);
+  console.log(q[0], q[1]);
+  console.log(q[0] + u[0]*(tI*ds), q[1] + u[1]*(tI*ds), "\n");
+
+
+
+  print_fence(info.fence);
+
+  print_fence( grid_sweep_perim_2d(ctx, p, 1)["fence"] );
+  print_fence( grid_sweep_perim_2d(ctx, p, 2)["fence"] );
+  print_fence( grid_sweep_perim_2d(ctx, p, 3)["fence"] );
+  print_fence( grid_sweep_perim_2d(ctx, p, 4)["fence"] );
+  return;
+
+  for (let i=0; i<info.fence.length; i++) {
+    let dxy = [ Math.random()/64, Math.random()/64 ];
+    let pv = info.fence[i];
+    console.log(pv[0][0] + dxy[0], pv[0][1] + dxy[1] );
+    console.log(pv[0][0] + pv[1][0] + dxy[0], pv[0][1] + pv[1][1] + dxy[1] );
+    console.log("\n");
+  }
+
+
+}
+
+fence_experiment();
 process.exit();
 
+
+
+//test_grid_sweep_perim_2d();
+//process.exit();
+
+
+function fence_secure(fence, ir) {
+  for (let i=0; i<fence.length; i++) {
+    if (fence[i] < 0) { return false; }
+    if (fence[i] > ir) { return false; }
+  }
+  return true;
+}
+
+function gen_instance_2d_fence(n, B) {
+  let info = {
+    "dim": 2,
+    "start": [0,0],
+    "size": [1,1],
+    "point": [],
+    "point_grid_bp": [],
+    "grid_cell_size": [-1,-1],
+    "bbox": [[0,0], [1,1]],
+    "grid": [],
+    "edge": []
+  };
+
+  let grid_s = Math.sqrt(n);
+  let grid_n = Math.ceil(grid_s);
+
+  let ds = 1 / grid_n;
+
+  info.grid_cell_size[0] = ds;
+  info.grid_cell_size[1] = ds;
+  info.grid_n = grid_n;
+  info.grid_s = grid_s;
+
+
+  //PROFILING
+  prof_s(prof_ctx, "init_grid");
+  //PROFILING
+
+
+  // alloc grid
+  //
+  for (let i=0; i<grid_n; i++) {
+    info.grid.push([]);
+    for (let j=0; j<grid_n; j++) {
+      info.grid[i].push([]);
+    }
+  }
+
+  let grid_size  = [ 1, 1 ];
+  let grid_start = [ 0,0 ];
+  let grid_cell_size = [ ds, ds ];
+
+  info.start = grid_start;
+  info.size = grid_size;
+
+  // alloc and create random points
+  //
+  for (let i=0; i<n; i++) {
+    let pnt = [ Math.random()*grid_size[0] + grid_start[0], Math.random()*grid_size[1] + grid_start[1] ];
+    info.point.push(pnt);
+    info.point_grid_bp.push([-1,-1]);
+    info.edge.push([]);
+  }
+
+  //PROFILING
+  prof_e(prof_ctx, "init_grid");
+  //PROFILING
+
+  //PROFILING
+  prof_s(prof_ctx, "setup");
+  //PROFILING
+
+
+  // push points into grid, linear linked list/array for dups
+  //
+  for (let i=0; i<n; i++) {
+    //let ix = Math.floor(info.point[i][0]*grid_s);
+    //let iy = Math.floor(info.point[i][1]*grid_s);
+    let ix = Math.floor(info.point[i][0]*grid_n);
+    let iy = Math.floor(info.point[i][1]*grid_n);
+    info.grid[iy][ix].push(i);
+    info.point_grid_bp[i] = [ix,iy];
+  }
+
+  //PROFILING
+  prof_e(prof_ctx, "setup");
+  //PROFILING
+
+
+  let P = info.point;
+  let G = info.grid;
+
+  let E = [];
+
+  let octant_dir_map = [ 0, 1, 1, 2, 2, 3, 3, 0 ];
+
+  // 0 - right
+  // 1 - left
+  // 2 - up
+  // 3 - down
+  //
+
+  // octant_index_2d(p,q)
+
+  for (let p_idx=0; p_idx < P.length; p_idx++) {
+    let pnt = P[p_idx];
+
+    let i_anch_x = Math.floor(pnt[0] / ds);
+    let i_anch_y = Math.floor(pnt[1] / ds);
+
+    let fence_q = [-1,-1,-1,-1];
+
+    let iR = 0;
+    while (iR < grid_n) {
+
+      if (fence_secure(i_r, fence_q)) { break; }
+
+      for (let g_idx=0; g_idx < G[i_anch_y][i_anch_x].length; g_idx++) {
+        let q_idx = G[i_anch_y][i_anch_x][g_idx];
+        if (q_idx == p_idx) { continue; }
+
+      }
+
+      iR++;
+    }
+
+  }
+
+}
+
+/*
+let a = lune_points([0,0], [0,1], 32, 1);
+print_point(a);
+console.log("\n");
+
+a = lune_points([0,0], [Math.sqrt(2), -1], 32, 1);
+print_point(a);
+console.log("\n");
+
+a = lune_points([0,0], [1, -Math.sqrt(2)/2], 32, 1);
+print_point(a);
+console.log("\n");
+
+process.exit();
+*/
+
+// trying to figure out why there's a polynomial time blowup
+//
+
+//info = gen_instance_2d(3000, [[0,0],[1,1]]);
+//process.exit();
+
+function cell_stat_experiment() {
+
+  for (let it=0; it<10; it++) {
+    console.log("#it:", it);
+    let info = gen_instance_2d(10000, [[0,0],[1,1]]);
+  }
+
+  for (let dist in _debug_stat.count) {
+    console.log("#", dist, _debug_stat.val[dist], _debug_stat.count[dist] );
+    console.log( dist, _debug_stat.val[dist] / _debug_stat.count[dist]);
+  }
+  process.exit();
+}
+
+let _single_run = false;
+if (_single_run) {
+  let info = gen_instance_2d(1000, [[0,0],[1,1]]);
+  print_point(info.point, 1);
+  process.exit();
+
+}
+else {
+
+  for (let t=100; t<5000; t+=100) {
+
+    let s_t = new Date().getTime();
+
+    let info = gen_instance_2d(t, [[0,0],[1,1]]);
+    //print_point(info.point, 1);
+
+    let e_t = new Date().getTime();
+
+    console.log("##", t, (e_t - s_t)/1000);
+  }
+  process.exit();
+
+}
 
 // CRUF!!!
 
