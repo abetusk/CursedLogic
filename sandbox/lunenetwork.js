@@ -1191,7 +1191,7 @@ function fence_experiment() {
   //let tI = Math.ceil( (Math.sqrt(2)*t1) - l0 ) + 1;
 
   let p1 = njs.sub(p, njs.mul( Math.sqrt(2)*l0, v ));
-  let tI = Math.ceil(njs.dot(v, njs.mul( 1/(ds*Math.sqrt(2)), njs.sub( sq, p1 ) ))) + 1;
+  let tI = Math.ceil(njs.dot(v, njs.mul( 1/(ds*Math.sqrt(2)), njs.sub( sq, p1 ) )));
 
   console.log("# lil fence");
   console.log(p[0] + l0, p[1] + l0);
