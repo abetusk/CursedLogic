@@ -117,6 +117,10 @@
 //
 
 var njs = require("./numeric.js");
+var srand = require("./seedrandom.js");
+
+var _rnd = srand("lunenetwork");
+
 
 var N = 10;
 var pnt = [];
@@ -1100,15 +1104,85 @@ function print_fence(fence) {
 }
 
 function fence_experiment() {
-  let n = 107;
-  let m = Math.ceil(Math.sqrt(n));
-  let ds = 1/m;
-  let ctx = {
-    "grid_cell_size": [ 1/m, 1/m ],
-    "grid_n": m,
-    "n" : n
+  let n = 301;
+
+  let info = {
+    "dim": 2,
+    "start": [0,0],
+    "size": [1,1],
+    "point": [],
+    "point_grid_bp": [],
+    "grid_cell_size": [-1,-1],
+    "bbox": [[0,0], [1,1]],
+    "grid": [],
+    "edge": []
   };
 
+  let grid_s = Math.sqrt(n);
+  let grid_n = Math.ceil(grid_s);
+
+  let ds = 1 / grid_n;
+
+  info.grid_cell_size[0] = ds;
+  info.grid_cell_size[1] = ds;
+  info.grid_n = grid_n;
+  info.grid_s = grid_s;
+
+
+  // alloc grid
+  //
+  for (let i=0; i<grid_n; i++) {
+    info.grid.push([]);
+    for (let j=0; j<grid_n; j++) {
+      info.grid[i].push([]);
+    }
+  }
+
+  let grid_size  = [ 1, 1 ];
+  let grid_start = [ 0,0 ];
+  let grid_cell_size = [ ds, ds ];
+
+  info.start = grid_start;
+  info.size = grid_size;
+
+  // alloc and create random points
+  //
+  for (let i=0; i<n; i++) {
+    //let pnt = [ Math.random()*grid_size[0] + grid_start[0], Math.random()*grid_size[1] + grid_start[1] ];
+    let pnt = [ _rnd()*grid_size[0] + grid_start[0], _rnd()*grid_size[1] + grid_start[1] ];
+    info.point.push(pnt);
+    info.point_grid_bp.push([-1,-1]);
+    info.edge.push([]);
+  }
+
+  //DEBUG
+  /*
+  info.point = [
+    [0.577528413806603, 0.47385840588765227],
+    [0.7545700276930001, 0.7446165117328614],
+    [0.5659559887552805, 0.8130141489035281],
+    [0.23404115213260823, 0.5685840222383978],
+    [0.48941336161580806, 0.8022928394637985],
+    [0.8778727429839634, 0.7811444896039452],
+    [0.543406685977869, 0.6543850802705082],
+    [0.10279216933477997, 0.3709332808511232],
+    [0.8336235963753664, 0.37059078610477547],
+    [0.16867251722038645, 0.9069336195787026],
+    [0.3440582282319222, 0.5720329444309744]
+  ];
+  */
+
+  // push points into grid, linear linked list/array for dups
+  //
+  for (let i=0; i<n; i++) {
+    let ix = Math.floor(info.point[i][0]*grid_n);
+    let iy = Math.floor(info.point[i][1]*grid_n);
+    info.grid[iy][ix].push(i);
+    info.point_grid_bp[i] = [ix,iy];
+  }
+
+
+  let pi4 = Math.PI/4;
   let s2 = Math.sqrt(2)/2;
   let v_lookup = [
     [ s2, -s2 ],
@@ -1124,149 +1198,141 @@ function fence_experiment() {
     [ s2,  s2 ]
   ];
 
-  let p = [ Math.random(), Math.random() ];
-  let q = [0,0];
+  print_point(info.point, true);
 
-  // R0
-  q = [ p[0] + ds/2, p[1] + ds/3 ];
 
-  // R1
-  q = [ p[0] + ds/3 , p[1] + ds/2 ]
+  // example point to test
+  //
+  let p_idx = 0;
+  let p = info.point[p_idx];
 
-  // R2
-  q = [ p[0] - ds/3 , p[1] + ds/2 ]
+  // points in fence
+  //
+  let pif_list = [];
 
-  // R3
-  q = [ p[0] - ds/2 , p[1] + ds/3 ]
+  let p_fence_idx = [ grid_n, grid_n, grid_n, grid_n ];
 
-  // R4
-  q = [ p[0] - ds/2 , p[1] - ds/3 ]
+  let p_grid = [ Math.floor(p[0]/ds), Math.floor(p[1]/ds) ];
+  p_fence_idx = [ grid_n - p_grid[0], grid_n - p_grid[1], p_grid[0], p_grid[1] ];
 
-  // R5
-  q = [ p[0] - ds/3 , p[1] - ds/2 ]
+  console.log("# init p_fence_idx:", p_fence_idx, "(p_grid:", p_grid, ")");
 
-  // R6
-  q = [ p[0] + ds/3 , p[1] - ds/2 ]
+  let octant2quadrent = [ 0, 1,1, 2,2, 3,3, 0 ];
 
-  // R7
-  q = [ p[0] + ds/2 , p[1] - ds/3 ]
+  console.log("# p (point[0])");
+  console.log(p[0],p[1], "\n");
 
-  let ir = 0;
-  let info = grid_sweep_perim_2d(ctx, p, ir);
+  // we're trying to find the intersection of the perpendicular line
+  // from p to q as it intersects the edges of the enclosing fence
+  // aroudn p
+  //
 
-  let Rk = octant_index_2d(p,q);
+  let gpi0 = grid_sweep_perim_2d(info, p, 0);
+  let l0 = Math.abs(p[0] - (ds*gpi0.perim_bbox[0][0]));
 
-  let v = v_lookup[Rk];
-
-  let l0 = Math.abs(p[0] - (ds*info.perim_bbox[0][0]));
-  let _l = Math.abs(p[0] - (ds*info.perim_bbox[1][0]));
+  let _l = Math.abs(p[0] - (ds*gpi0.perim_bbox[1][0]));
   if ( _l < l0) { l0 = _l; }
 
-  _l = Math.abs(p[1] - (ds*info.perim_bbox[0][1]));
+  _l = Math.abs(p[1] - (ds*gpi0.perim_bbox[0][1]));
   if ( _l < l0) { l0 = _l; }
 
-  _l = Math.abs(p[1] - (ds*info.perim_bbox[1][1]));
+  _l = Math.abs(p[1] - (ds*gpi0.perim_bbox[1][1]));
   if ( _l < l0) { l0 = _l; }
 
   console.log("# l0:", l0);
-
-  let pi4 = Math.PI/4;
-
-  let _u = njs.sub(p,q);
-  let u = [0,0];
-
-  let _a = Math.atan2(_u[1], _u[0]);
-  let _a_idx = Math.floor((_a + Math.PI) / pi4);
-  if ((_a_idx % 2) == 0) {
-    u = njs.mul( 1/njs.norm2(_u), [-_u[1],  _u[0] ] );
-  }
-  else {
-    u = njs.mul( 1/njs.norm2(_u), [ _u[1], -_u[0] ] );
+  console.log("# debug print fence:");
+  for (let ir=0; ir<5; ir++) {
+    let _gpi = grid_sweep_perim_2d(info, p, ir);
+    print_fence(_gpi.fence);
   }
 
-  let t0 = ((v[0]*(q[1] - p[1])) - (v[1]*(q[0] - p[0]))) / ((v[1]*u[0]) - (v[0]*u[1]));
 
-  let sq = njs.add(q, njs.mul(t0, u));
-  let t1 = njs.dot(v, njs.sub(sq, p));
-  //let tI = Math.ceil( (Math.sqrt(2)*t1) - l0 ) + 1;
+  for (let ir=0; ir<info.grid_n; ir++) {
 
-  let p1 = njs.sub(p, njs.mul( Math.sqrt(2)*l0, v ));
-  let tI = Math.ceil(njs.dot(v, njs.mul( 1/(ds*Math.sqrt(2)), njs.sub( sq, p1 ) )));
+    console.log("#ir:", ir);
 
-  console.log("# lil fence");
-  console.log(p[0] + l0, p[1] + l0);
-  console.log(p[0] - l0, p[1] + l0, "\n");
-  console.log(p[0] - l0, p[1] - l0);
-  console.log(p[0] + l0, p[1] - l0, "\n");
-  console.log(p[0] - l0, p[1] + l0);
-  console.log(p[0] - l0, p[1] - l0, "\n");
-  console.log(p[0] + l0, p[1] + l0);
-  console.log(p[0] + l0, p[1] - l0, "\n");
+    let grid_perim_info = grid_sweep_perim_2d(info, p, ir);
 
-  let _dl = l0 + ds;
-  console.log(p[0] + _dl, p[1] + _dl);
-  console.log(p[0] - _dl, p[1] + _dl, "\n");
-  console.log(p[0] - _dl, p[1] - _dl);
-  console.log(p[0] + _dl, p[1] - _dl, "\n");
-  console.log(p[0] - _dl, p[1] + _dl);
-  console.log(p[0] - _dl, p[1] - _dl, "\n");
-  console.log(p[0] + _dl, p[1] + _dl);
-  console.log(p[0] + _dl, p[1] - _dl, "\n");
+    let end_search = true;
+    for (let i=0; i<4; i++) {
+      if (ir < p_fence_idx[i]) { end_search = false; break; }
+    }
+    if (end_search) {
+      console.log("#end search (ir", ir, ")");
+      break;
+    }
 
-  _dl = l0 + 2*ds;
-  console.log(p[0] + _dl, p[1] + _dl);
-  console.log(p[0] - _dl, p[1] + _dl, "\n");
-  console.log(p[0] - _dl, p[1] - _dl);
-  console.log(p[0] + _dl, p[1] - _dl, "\n");
-  console.log(p[0] - _dl, p[1] + _dl);
-  console.log(p[0] - _dl, p[1] - _dl, "\n");
-  console.log(p[0] + _dl, p[1] + _dl);
-  console.log(p[0] + _dl, p[1] - _dl, "\n");
+    for (let grid_perim_idx=0; grid_perim_idx < grid_perim_info.path.length; grid_perim_idx++) {
 
-  console.log("#??", njs.norm2(u), njs.norm2(v), njs.dot(u,u), njs.dot(v,v));
+      let ix = grid_perim_info.path[grid_perim_idx][0];
+      let iy = grid_perim_info.path[grid_perim_idx][1];
 
-  console.log("# Rk:", Rk, "v:", v, "u:", u, "t0:", t0, "sq:", sq, "t1:", t1, "tI:", tI);
-  console.log("####", njs.add(q, njs.mul(t0, u)), njs.add(p, njs.mul(t1, v)));
+      let gpi = grid_perim_info;
 
-  console.log(p[0], p[1]);
-  console.log(p[0] + ds*v[0], p[1] + ds*v[1], "\n");
+      console.log("# ixy:", ix, iy);
+      console.log("# fence:");
+      print_fence(grid_perim_info.fence);
+      console.log("\n");
 
-  console.log(q[0], q[1]);
-  console.log(q[0] + ds*u[0], q[1] + ds*u[1], "\n");
-  
-  console.log(q[0], q[1]);
-  console.log(q[0] + u[0]*t0, q[1] + u[1]*t0, "\n");
+      for (let bin_idx=0; bin_idx < info.grid[iy][ix].length; bin_idx++) {
 
-  console.log(p[0], p[1]);
-  console.log(p[0] + v[0]*t1, p[1] + v[1]*t1, "\n");
+        let q_idx = info.grid[iy][ix][bin_idx];
+        if (q_idx == p_idx) { continue; }
 
+        pif_list.push(q_idx);
 
-  console.log("# tI:", tI);
-  console.log(p[0], p[1]);
-  console.log(p[0] + v[0]*(tI*ds), p[1] + v[1]*(tI*ds), "\n");
+        let q = info.point[q_idx];
 
-  console.log("# tI:", tI);
-  console.log(q[0], q[1]);
-  console.log(q[0] + u[0]*(tI*ds), q[1] + u[1]*(tI*ds), "\n");
+        let Rk = octant_index_2d(p,q);
 
+        let v = v_lookup[Rk];
 
+        // l0 represents the initial size of the enclosing fence around p
+        //
 
-  print_fence(info.fence);
+        let _u = njs.sub(p,q);
+        let u = [0,0];
 
-  print_fence( grid_sweep_perim_2d(ctx, p, 1)["fence"] );
-  print_fence( grid_sweep_perim_2d(ctx, p, 2)["fence"] );
-  print_fence( grid_sweep_perim_2d(ctx, p, 3)["fence"] );
-  print_fence( grid_sweep_perim_2d(ctx, p, 4)["fence"] );
-  return;
+        let _a = Math.atan2(_u[1], _u[0]);
+        let _a_idx = Math.floor((_a + Math.PI) / pi4);
+        if ((_a_idx % 2) == 0) {
+          u = njs.mul( 1/njs.norm2(_u), [-_u[1],  _u[0] ] );
+        }
+        else {
+          u = njs.mul( 1/njs.norm2(_u), [ _u[1], -_u[0] ] );
+        }
 
-  for (let i=0; i<info.fence.length; i++) {
-    let dxy = [ Math.random()/64, Math.random()/64 ];
-    let pv = info.fence[i];
-    console.log(pv[0][0] + dxy[0], pv[0][1] + dxy[1] );
-    console.log(pv[0][0] + pv[1][0] + dxy[0], pv[0][1] + pv[1][1] + dxy[1] );
-    console.log("\n");
+        let t0 = ((v[0]*(q[1] - p[1])) - (v[1]*(q[0] - p[0]))) / ((v[1]*u[0]) - (v[0]*u[1]));
+
+        let sq = njs.add(q, njs.mul(t0, u));
+        let t1 = njs.dot(v, njs.sub(sq, p));
+        //let tI = Math.ceil( (Math.sqrt(2)*t1) - l0 ) + 1;
+
+        let p1 = njs.sub(p, njs.mul( Math.sqrt(2)*l0, v ));
+        let tI = Math.ceil(njs.dot(v, njs.mul( 1/(ds*Math.sqrt(2)), njs.sub( sq, p1 ) )));
+
+        console.log("# q (point[", q_idx, "])");
+        console.log(q[0], q[1]);
+        console.log(sq[0], sq[1],  "\n");
+
+        console.log("# p diag");
+        console.log(p[0], p[1]);
+        console.log(sq[0], sq[1], "\n");
+
+        let quadrent_idx = octant2quadrent[Rk];
+
+        console.log("# tI:", tI, ", Rk:", Rk, ", quad:", quadrent_idx, ", q_fence_idx:", p_fence_idx);
+
+        if (tI < p_fence_idx[quadrent_idx]) {
+          p_fence_idx[quadrent_idx] = tI;
+
+          console.log("# adding tI (p_fence_idx now:", p_fence_idx, ")");
+
+        }
+
+      }
+    }
   }
-
 
 }
 
@@ -1287,7 +1353,7 @@ function fence_secure(fence, ir) {
   return true;
 }
 
-function gen_instance_2d_fence(n, B) {
+function _gen_instance_2d_fence(n, B) {
   let info = {
     "dim": 2,
     "start": [0,0],
