@@ -121,7 +121,7 @@ var srand = require("./seedrandom.js");
 
 var _rnd = srand("lunenetwork");
 
-var DEBUG_LEVEL = 3;
+var DEBUG_LEVEL = 0;
 
 var N = 10;
 var pnt = [];
@@ -533,7 +533,12 @@ function perf_experiment() {
 // more time.
 //
 //
-function gen_instance_2d(n, B) {
+//
+// ok, well, this has a bug...does not properly calculate rng
+//
+function gen_instance_2d(n, B, _point) {
+
+  _point = ((typeof _point === "undefined") ? [] : _point);
 
   let info = {
     "dim": 2,
@@ -544,7 +549,9 @@ function gen_instance_2d(n, B) {
     "grid_cell_size": [-1,-1],
     "bbox": [[0,0], [1,1]],
     "grid": [],
-    "edge": []
+    "edge": [],
+    "P": [],
+    "E": []
   };
 
   let grid_s = Math.sqrt(n);
@@ -578,11 +585,18 @@ function gen_instance_2d(n, B) {
   info.size = grid_size;
 
   for (let i=0; i<n; i++) {
-    let pnt = [ Math.random()*grid_size[0] + grid_start[0], Math.random()*grid_size[1] + grid_start[1] ];
-    info.point.push(pnt);
+    if (i < _point.length) {
+      info.point.push(_point[i]);
+    }
+    else {
+      let pnt = [ Math.random()*grid_size[0] + grid_start[0], Math.random()*grid_size[1] + grid_start[1] ];
+      info.point.push(pnt);
+    }
     info.point_grid_bp.push([-1,-1]);
     info.edge.push([]);
   }
+
+  info.P = info.point;
 
   //PROFILING
   prof_e(prof_ctx, "init_grid");
@@ -897,6 +911,9 @@ function gen_instance_2d(n, B) {
     }
   }
 
+  info.P = info.point;
+  info.E = E;
+
   let _debug_grid = false;
   if (_debug_grid) {
     for (let iy=0; iy<grid_n; iy++) {
@@ -1070,7 +1087,12 @@ function grid_sweep_perim_2d(ctx, pnt, ir) {
           (iy < grid_bbox[0][1]) || (iy >= grid_bbox[1][1])) {
         continue;
       }
+
       let idx = info.path.length-1;
+      if ((idx >= 0) &&
+          (info.path[idx][0] == ix) &&
+          (info.path[idx][1] == iy)) { continue; }
+
       info.path.push([ix,iy]);
     }
 
@@ -1080,7 +1102,12 @@ function grid_sweep_perim_2d(ctx, pnt, ir) {
           (iy < grid_bbox[0][1]) || (iy >= grid_bbox[1][1])) {
         continue;
       }
+
       let idx = info.path.length-1;
+      if ((idx >= 0) &&
+          (info.path[idx][0] == ix) &&
+          (info.path[idx][1] == iy)) { continue; }
+
       info.path.push([ix,iy]);
     }
 
@@ -1090,7 +1117,12 @@ function grid_sweep_perim_2d(ctx, pnt, ir) {
           (iy < grid_bbox[0][1]) || (iy >= grid_bbox[1][1])) {
         continue;
       }
+
       let idx = info.path.length-1;
+      if ((idx >= 0) &&
+          (info.path[idx][0] == ix) &&
+          (info.path[idx][1] == iy)) { continue; }
+
       info.path.push([ix,iy]);
     }
 
@@ -1100,7 +1132,12 @@ function grid_sweep_perim_2d(ctx, pnt, ir) {
           (iy < grid_bbox[0][1]) || (iy >= grid_bbox[1][1])) {
         continue;
       }
+
       let idx = info.path.length-1;
+      if ((idx >= 0) &&
+          (info.path[idx][0] == ix) &&
+          (info.path[idx][1] == iy)) { continue; }
+
       info.path.push([ix,iy]);
     }
 
@@ -1163,10 +1200,10 @@ function print_fence(fence) {
 
 // WIP!!
 //
-function fence_experiment() {
+function gen_instance_2d_fence(n) {
   //let n = 301;
-  let n = 128001;
-  n = 501;
+  //let n = 128001;
+  //n = 501;
 
   let _eps = 1 / (1024*1024*1024);
 
@@ -1223,23 +1260,6 @@ function fence_experiment() {
     info.edge.push([]);
   }
 
-  //DEBUG
-  /*
-  info.point = [
-    [0.577528413806603, 0.47385840588765227],
-    [0.7545700276930001, 0.7446165117328614],
-    [0.5659559887552805, 0.8130141489035281],
-    [0.23404115213260823, 0.5685840222383978],
-    [0.48941336161580806, 0.8022928394637985],
-    [0.8778727429839634, 0.7811444896039452],
-    [0.543406685977869, 0.6543850802705082],
-    [0.10279216933477997, 0.3709332808511232],
-    [0.8336235963753664, 0.37059078610477547],
-    [0.16867251722038645, 0.9069336195787026],
-    [0.3440582282319222, 0.5720329444309744]
-  ];
-  */
-
   // push points into grid, linear linked list/array for dups
   //
   for (let i=0; i<n; i++) {
@@ -1270,16 +1290,19 @@ function fence_experiment() {
     print_point(info.point, true);
   }
 
+  let P = info.point;
+  let E = [];
+
 
   // example point to test
   //
   //let p_idx = 0;
   //let p = info.point[p_idx];
 
-  //for (let p_idx = 0; p_idx < info.point.length; p_idx++) {
+  for (let p_idx = 0; p_idx < info.point.length; p_idx++) {
 
   //DEBUG
-  for (__i=0; __i<1; __i++) {
+  //for (__i=0; __i<1; __i++) {
 
     /*
     let p_idx = 0;
@@ -1295,7 +1318,7 @@ function fence_experiment() {
     }
     */
 
-    p_idx = 26;
+    //p_idx = 26;
   //DEBUG
 
     let p = info.point[p_idx];
@@ -1362,6 +1385,7 @@ function fence_experiment() {
       let grid_perim_info = grid_sweep_perim_2d(info, p, ir);
 
       if (DEBUG_LEVEL > 2) {
+        console.log("#path:", grid_perim_info.path.join(";"));
       }
 
       let end_search = true;
@@ -1462,16 +1486,80 @@ function fence_experiment() {
     if (DEBUG_LEVEL > 2) {
       console.log("#pif_list.length:", pif_list.length);
     }
-      console.log("#pif_list.length:", pif_list.length, "p_idx:", p_idx);
 
+    for (let i=0; i<pif_list.length; i++) {
+
+      let q_idx = pif_list[i];
+
+      let _found = true;
+      for (let j=0; j<pif_list.length; j++) {
+        if (i==j) { continue; }
+
+        let u_idx = pif_list[j];
+
+        if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
+
+          //console.log("##>> point", P[u_idx], "(idx:", u_idx,") in lune of {", P[p_idx], "(idx:", p_idx,"),", P[q_idx], "(idx:", q_idx,")}");
+
+          _found = false;
+          break;
+        }
+      }
+      if (_found) {
+        E.push([p_idx, q_idx]);
+      }
+    }
 
 
   // for p_idx
   }
 
+  return { "P": P, "E": E };
 }
 
-fence_experiment();
+function print_edge(P, E) {
+  for (let i=0; i<P.length; i++) {
+    console.log("#", i);
+    console.log(P[i][0], P[i][1], "\n");
+  }
+
+  for (let e_idx=0; e_idx<E.length; e_idx++) {
+    let p = P[E[e_idx][0]];
+    let q = P[E[e_idx][1]];
+
+    console.log(p[0], p[1]);
+    console.log(q[0], q[1]);
+    console.log("");
+  }
+
+}
+
+let res0 = gen_instance_2d_fence(10000);
+print_edge(res0.P, res0.E);
+process.exit();
+
+var prof_ctx = {};
+for (let n=10000; n<100000; n+=1000) {
+  console.log(n);
+  prof_s(prof_ctx, "n" + n.toString());
+  let res0 = gen_instance_2d_fence(n);
+
+  prof_e(prof_ctx, "n" + n.toString());
+
+  prof_print(prof_ctx);
+  
+  //print_edge(res0.P, res0.E);
+}
+
+
+process.exit();
+
+let res1 = gen_instance_2d(res0.P.length, undefined, res0.P);
+print_edge(res1.P, res1.E);
+
+let _lp = lune_points( res0.P[157], res0.P[33] );
+print_point(_lp);
+
 process.exit();
 
 
