@@ -493,6 +493,8 @@ function perf_experiment() {
 
 
 
+// WIP!!!
+//
 function gen_instance_3d_fence(n, B, _point) {
   _point = ((typeof _point === "undefined") ? [] : _point);
 
