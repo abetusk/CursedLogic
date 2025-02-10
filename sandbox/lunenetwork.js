@@ -338,17 +338,6 @@ function small_2d_tests() {
   return passed;
 }
 
-function main() {
-
-  let _n = 100000;
-  let _pnt = poisson_point(_n, 2);
-  let res = gen_instance_2d_fence(_n, _pnt);
-
-  process.exit();
-}
-
-main();
-
 
 //-----------
 //-----------
@@ -399,6 +388,7 @@ function oob(p, B) {
 
   return false;
 }
+
 
 // Notes for future me:
 //
@@ -623,6 +613,94 @@ function perf_experiment() {
 
 }
 
+function alloc_info_3d(n, B, pnts) {
+  pnts = ((typeof _point === "undefined") ? [] : pnts);
+
+  let _eps = 1 / (1024*1024*1024);
+
+  let info = {
+    "dim": 3,
+    "start": [0,0,0],
+    "size": [1,1,1],
+    "point": [],
+    "point_grid_bp": [],
+    "grid_cell_size": [-1,-1,-1],
+    "bbox": [[0,0,0], [1,1,1]],
+    "grid": [],
+    "edge": [],
+    "P": [],
+    "E": []
+  };
+
+  let grid_s = Math.cbrt(n);
+  let grid_n = Math.ceil(grid_s);
+
+  let ds = 1 / grid_n;
+
+  let grid_size  = [ 1, 1, 1 ];
+  let grid_start = [ 0, 0, 0 ];
+  let grid_cell_size = [ ds, ds, ds ];
+
+
+  let s3 = Math.cbrt(3)/2;
+
+
+  info.grid_cell_size[0] = ds;
+  info.grid_cell_size[1] = ds;
+  info.grid_cell_size[2] = ds;
+  info.grid_n = grid_n;
+  info.grid_s = grid_s;
+
+  info.size = grid_size;
+  info.start = grid_start;
+
+  // initialize points, creating random ones if ncessary
+  //
+  for (let i=0; i<n; i++) {
+    if (i < pnts.length) {
+      info.point.push(pnts[i]);
+    }
+    else {
+      let pnt = [
+        Math.random()*grid_size[0] + grid_start[0],
+        Math.random()*grid_size[1] + grid_start[1],
+        Math.random()*grid_size[2] + grid_start[2]
+    ];
+      info.point.push(pnt);
+    }
+    info.point_grid_bp.push([-1,-1,-1]);
+    info.edge.push([]);
+  }
+
+
+  info.P = info.point;
+
+  // init grid
+  //
+  for (let i=0; i<grid_n; i++) {
+    info.grid.push([]);
+    for (let j=0; j<grid_n; j++) {
+      info.grid[i].push([]);
+      for (let k=0; k<grid_n; k++) {
+        info.grid[i][j].push([]);
+      }
+    }
+  }
+
+
+  // setup lll grid binning
+  //
+  for (let i=0; i<n; i++) {
+    let ix = Math.floor(info.point[i][0]*grid_n);
+    let iy = Math.floor(info.point[i][1]*grid_n);
+    let iz = Math.floor(info.point[i][2]*grid_n);
+    info.grid[iz][iy][ix].push(i);
+    info.point_grid_bp[i] = [ix,iy,iz];
+  }
+
+
+  return info;
+}
 
 
 // WIP!!!
@@ -639,7 +717,7 @@ function gen_instance_3d_fence(n, B, _point) {
     "point": [],
     "point_grid_bp": [],
     "grid_cell_size": [-1,-1,-1],
-    "bbox": [[0,0,1], [1,1,1]],
+    "bbox": [[0,0,0], [1,1,1]],
     "grid": [],
     "edge": [],
     "P": [],
@@ -926,10 +1004,6 @@ function gen_instance_3d_fence(n, B, _point) {
 
   return info;
 }
-
-let info = gen_instance_3d_fence(1000);
-print_point(info.P, 1);
-process.exit();
 
 //perf_experiment();
 
@@ -1378,6 +1452,142 @@ function gen_instance_2d(n, B, _point) {
 
   return info;
 }
+
+function grid_sweep_perim_3d(ctx, pnt, ir) {
+  let info = {
+    "path": []
+  };
+
+
+  let grid_n = ctx.grid_n;
+  let cell_size = ctx.grid_cell_size;
+  let cell_offset = [0,0,0];
+
+  let _grid_bbox = [[0,0,0], [grid_n, grid_n, grid_n]];
+
+  let ipnt = [
+    Math.floor(pnt[0] / cell_size[0]),
+    Math.floor(pnt[1] / cell_size[1]),
+    Math.floor(pnt[2] / cell_size[2])
+  ];
+
+  let mxyz = [ ipnt[0] - ir, ipnt[1] - ir, ipnt[2] - ir ];
+  let Mxyz = [ ipnt[0] + ir+1, ipnt[1] + ir+1, ipnt[2] + ir+1 ];
+
+  console.log("#", mxyz, Mxyz);
+
+  for (let ix=mxyz[0]; ix<Mxyz[0]; ix++) {
+    for (let iy=mxyz[1]; iy<Mxyz[1]; iy++) {
+      if (!oob([ix,iy,mxyz[2]], _grid_bbox)) {
+
+        console.log("## xy-:", ix, iy, mxyz[2]);
+
+        info.path.push([ix,iy,mxyz[2]]);
+      }
+      if (mxyz[2] == (Mxyz[2]-1)) { continue; }
+      if (!oob([ix,iy,Mxyz[2]-1], _grid_bbox)) {
+
+        console.log("## xy+:", ix, iy, Mxyz[2]-1);
+
+        info.path.push([ix,iy,Mxyz[2]-1]);
+      }
+    }
+  }
+
+  console.log("#\n#");
+
+  for (let iy=mxyz[1]; iy<Mxyz[1]; iy++) {
+    for (let iz=(mxyz[2]+1); iz<(Mxyz[2]-1); iz++) {
+      if (!oob([mxyz[0], iy, iz], _grid_bbox)) {
+
+        console.log("## yz-:", mxyz[0], iy, iz);
+
+        info.path.push([mxyz[0], iy, iz]);
+      }
+      if (mxyz[0] == (Mxyz[0]-1)) { continue; }
+      if (!oob([Mxyz[0]-1, iy, iz], _grid_bbox)) {
+
+        console.log("## yz+:", Mxyz[0]-1, iy, iz);
+
+        info.path.push([Mxyz[0]-1, iy, iz]);
+      }
+    }
+  }
+
+  console.log("#\n#");
+
+  for (let ix=(mxyz[0]+1); ix<(Mxyz[0]-1); ix++) {
+    for (let iz=(mxyz[2]+1); iz<(Mxyz[2]-1); iz++) {
+      if (!oob([ix, mxyz[1], iz], _grid_bbox)) {
+
+        console.log("## xz-:", ix, mxyz[1], iz);
+
+        info.path.push([ix, mxyz[1], iz]);
+      }
+      if (mxyz[1] == (Mxyz[1]-1)) { continue; }
+      if (!oob([ix, Mxyz[1]-1, iz], _grid_bbox)) {
+
+        console.log("## xz+:", ix, Mxyz[1]-1, iz);
+
+        info.path.push([ix, Mxyz[1]-1, iz]);
+      }
+    }
+  }
+
+  console.log("#\n#");
+
+  return info;
+}
+
+//DEBUG
+//DEBUG
+function test_grid_sweep_perim_3d() {
+  let B = [[0,0,0],[1,1,1]];
+
+  let info = alloc_info_3d(150, B);
+
+  let sweep = {};
+
+  //print_point(info.P, 1);
+
+  /*
+  sweep = grid_sweep_perim_3d(info, info.P[0], 0);
+  console.log("#P[0]:", info.P[0]);
+  //console.log("#sweep path ir:0", sweep.path);
+
+  for (let ii=0; ii<sweep.path.length; ii++) {
+    console.log( sweep.path[ii][0], sweep.path[ii][1], sweep.path[ii][2]);
+  }
+  console.log("\n");
+  */
+
+  sweep = grid_sweep_perim_3d(info, info.P[0], 1);
+  console.log("#P[0]:", info.P[0]);
+  //console.log("#sweep path ir:1", sweep.path);
+  for (let ii=0; ii<sweep.path.length; ii++) {
+    console.log( sweep.path[ii][0], sweep.path[ii][1], sweep.path[ii][2]);
+  }
+  console.log("\n");
+
+  return;
+
+  sweep = grid_sweep_perim_3d(info, info.P[0], 2);
+  console.log("#P[0]:", info.P[0]);
+  //console.log("#sweep path ir:2", sweep.path);
+
+  for (let ii=0; ii<sweep.path.length; ii++) {
+    console.log( sweep.path[ii][0], sweep.path[ii][1], sweep.path[ii][2]);
+  }
+  console.log("\n");
+
+
+  process.exit();
+}
+test_grid_sweep_perim_3d();
+process.exit();
+//DEBUG
+//DEBUG
+
 
 function grid_sweep_perim_2d(ctx, pnt, ir) {
   let face_dir = [
@@ -2174,83 +2384,105 @@ function cell_stat_experiment() {
   process.exit();
 }
 
-let _single_run = false;
-if (_single_run) {
-  let info = gen_instance_2d(1000, [[0,0],[1,1]]);
-  print_point(info.point, 1);
-  process.exit();
+function __main() {
+  let _single_run = false;
+  if (_single_run) {
+    let info = gen_instance_2d(1000, [[0,0],[1,1]]);
+    print_point(info.point, 1);
+    process.exit();
 
-}
-else {
-
-  for (let t=100; t<5000; t+=100) {
-
-    let s_t = new Date().getTime();
-
-    let info = gen_instance_2d(t, [[0,0],[1,1]]);
-    //print_point(info.point, 1);
-
-    let e_t = new Date().getTime();
-
-    console.log("##", t, (e_t - s_t)/1000);
   }
-  process.exit();
+  else {
+
+    for (let t=100; t<5000; t+=100) {
+
+      let s_t = new Date().getTime();
+
+      let info = gen_instance_2d(t, [[0,0],[1,1]]);
+      //print_point(info.point, 1);
+
+      let e_t = new Date().getTime();
+
+      console.log("##", t, (e_t - s_t)/1000);
+    }
+    process.exit();
+
+  }
 
 }
 
 // CRUF!!!
 
-let anchor_pnt = [ Math.random(), Math.random() ];
+function _xxx() {
+  let anchor_pnt = [ Math.random(), Math.random() ];
 
-for (let ir=0; ir<5; ir++) {
-  for (let r_idx=0; r_idx<8; r_idx++) {
-    console.log("###", ir, r_idx);
-    let gp = grid_sweep_2d([0.05,0.05], anchor_pnt, ir, r_idx);
+  for (let ir=0; ir<5; ir++) {
+    for (let r_idx=0; r_idx<8; r_idx++) {
+      console.log("###", ir, r_idx);
+      let gp = grid_sweep_2d([0.05,0.05], anchor_pnt, ir, r_idx);
 
 
-    for (let ii=0; ii<gp.n; ii++) {
-      //console.log(gp.s[0] + gp.v[0]*ii, gp.s[1] + gp.v[1]*ii);
-      console.log(gp.S[0] + gp.V[0]*ii, gp.S[1] + gp.V[1]*ii);
-    }
+      for (let ii=0; ii<gp.n; ii++) {
+        //console.log(gp.s[0] + gp.v[0]*ii, gp.s[1] + gp.v[1]*ii);
+        console.log(gp.S[0] + gp.V[0]*ii, gp.S[1] + gp.V[1]*ii);
+      }
 
-    console.log("");
-
-    //console.log(gp);
-  }
-  console.log("\n");
-}
-
-process.exit();
-
-let A = naive_relnei_E(pnt);
-
-let print_lune = true;
-let print_graph = true;
-
-//print_point(pnt);
-if (print_lune) {
-  for (let i=0; i<N; i++) {
-    for (let j=(i+1); j<N; j++) {
-      if (A[i][j] < 0.5) { continue; }
-      let a = pnt[i];
-      let b = pnt[j];
-      let lune_pnt = lune_points(a,b);
-      print_point(lune_pnt);
-    }
-  }
-}
-
-if (print_graph) {
-  for (let i=0; i<N; i++) {
-    for (let j=(i+1); j<N; j++) {
-      if (A[i][j] < 0.5) { continue; }
-      let a = pnt[i];
-      let b = pnt[j];
-      console.log(a[0], a[1]);
-      console.log(b[0], b[1]);
       console.log("");
+
+      //console.log(gp);
+    }
+    console.log("\n");
+  }
+
+  process.exit();
+
+  let A = naive_relnei_E(pnt);
+
+  let print_lune = true;
+  let print_graph = true;
+
+  //print_point(pnt);
+  if (print_lune) {
+    for (let i=0; i<N; i++) {
+      for (let j=(i+1); j<N; j++) {
+        if (A[i][j] < 0.5) { continue; }
+        let a = pnt[i];
+        let b = pnt[j];
+        let lune_pnt = lune_points(a,b);
+        print_point(lune_pnt);
+      }
     }
   }
+
+  if (print_graph) {
+    for (let i=0; i<N; i++) {
+      for (let j=(i+1); j<N; j++) {
+        if (A[i][j] < 0.5) { continue; }
+        let a = pnt[i];
+        let b = pnt[j];
+        console.log(a[0], a[1]);
+        console.log(b[0], b[1]);
+        console.log("");
+      }
+    }
+  }
+
 }
+
+function main() {
+
+  let info = gen_instance_3d_fence(1000);
+  print_point(info.P, 1);
+  process.exit();
+
+
+  let _n = 100000;
+  let _pnt = poisson_point(_n, 2);
+  let res = gen_instance_2d_fence(_n, _pnt);
+
+  process.exit();
+}
+
+//main();
 
 
