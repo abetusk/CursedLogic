@@ -323,7 +323,8 @@ function small_2d_tests() {
     pnt = poisson_point(N, 2);
 
     let res = gen_instance_2d_fence(N, pnt);
-    let Echeck = naive_relnei_E(pnt);
+    let naive_res = naive_relnei_E(pnt);
+    let Echeck = naive_res.A;
 
     let _cr = check_cmp(res, Echeck);
     let sfx = (_cr ? "ok" : "error");
@@ -375,7 +376,15 @@ function naive_relnei_E(pnt) {
 
   }
 
-  return A;
+  let E = [];
+
+  for (let i=0; i<n; i++) {
+    for (let j=0; j<n; j++) {
+      if (A[i][j] > 0.5) { E.push([i,j]); }
+    }
+  }
+
+  return { "P": pnt, "E": E, "A": A };
 }
 
 function oob(p, B) {
@@ -2527,7 +2536,8 @@ function _xxx() {
 
   process.exit();
 
-  let A = naive_relnei_E(pnt);
+  let naive_res = naive_relnei_E(pnt);
+  let A = naive_res.A;
 
   let print_lune = true;
   let print_graph = true;
@@ -2562,9 +2572,25 @@ function _xxx() {
 
 function main() {
 
-  let info = gen_instance_3d_fence(32);
-  print_point(info.P, 1);
-  print_E(info.P, info.E);
+  let Ntest = [10,10,10,20,20,20,30,30,30,
+               50,100];
+
+  for (let n_idx=0; n_idx < Ntest.length; n_idx++) {
+    let N = Ntest[n_idx];
+    let _pnts = poisson_point(N, 3);
+
+    let info = gen_instance_3d_fence(N, [[0,0,0],[1,1,1]], _pnts);
+    //print_point(info.P, 1);
+    //print_E(info.P, info.E);
+
+    let naive_res = naive_relnei_E(info.P);
+    //print_E(naive_res.P, naive_res.E);
+
+    console.log("#", N, "{", n_idx,"}", check_cmp(info, naive_res.A));
+
+  }
+
+
   process.exit();
 
 
