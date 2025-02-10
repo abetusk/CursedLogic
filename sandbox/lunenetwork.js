@@ -816,6 +816,9 @@ function gen_instance_3d_fence(n, B, _point) {
 
   info.P = info.point;
 
+  let P = info.P;
+  let E = [];
+
   // setup lll grid binning
   //
   for (let i=0; i<n; i++) {
@@ -854,155 +857,240 @@ function gen_instance_3d_fence(n, B, _point) {
   //DEBUG
   //DEBUG
 
+  let _debug = false;
 
-  let p_idx = 0;
-  let p = info.P[p_idx];
+  for (let p_idx = 0; p_idx < info.P.length; p_idx++) {
 
-  let Wp = [ p[0]*grid_n, p[1]*grid_n, p[2]*grid_n ];
-  let ip = Wp.map( Math.floor );
+    //let p_idx = 0;
+    let p = info.P[p_idx];
 
-  let p_fence = [
-    grid_n-ip[0], ip[0],
-    grid_n-ip[1], ip[1],
-    grid_n-ip[2], ip[2]
-  ];
+    let Wp = [ p[0]*grid_n, p[1]*grid_n, p[2]*grid_n ];
+    let ip = Wp.map( Math.floor );
 
-  let p_near_idir = 1;
-  let l0 = Wp[0] - ip[0];
-  for (let xyz=0; xyz<3; xyz++) {
-    let _l = Wp[xyz] - ip[xyz];
-    if (_l < l0) {
-      p_near_idir = 2*xyz + 1;
-      l0 = _l;
+    let p_fence = [
+      grid_n-ip[0], ip[0],
+      grid_n-ip[1], ip[1],
+      grid_n-ip[2], ip[2]
+    ];
+
+    let p_near_idir = 1;
+    let l0 = Wp[0] - ip[0];
+    for (let xyz=0; xyz<3; xyz++) {
+      let _l = Wp[xyz] - ip[xyz];
+      if (_l < l0) {
+        p_near_idir = 2*xyz + 1;
+        l0 = _l;
+      }
+      _l = 1 - (Wp[xyz] - ip[xyz]);
+      if (_l < l0) {
+        p_near_idir = 2*xyz + 0;
+        l0 = _l;
+      }
     }
-    _l = 1 - (Wp[xyz] - ip[xyz]);
-    if (_l < l0) {
-      p_near_idir = 2*xyz + 0;
-      l0 = _l;
-    }
-  }
-  l0 *= ds;
-  let t0 = l0*Math.cbrt(3);
+    l0 *= ds;
+    let t0 = l0*Math.cbrt(3);
 
-  console.log("# P[", p_idx, "]:", p, "ip:", ip, "Wp:", Wp, "l0:", l0, "(near_idir:", p_near_idir, ")");
-
-  console.log(p[0], p[1], p[2]);
-  console.log(p[0] + l0*v_idir[p_near_idir][0], p[1] + l0*v_idir[p_near_idir][1], p[2] + l0*v_idir[p_near_idir][2]);
-  console.log("\n");
-
-  let p_f_v = [];
-  for (let idx=0; idx<frustum_v.length; idx++) {
-    p_f_v.push([]);
-    for (let ii=0; ii<frustum_v[idx].length; ii++) {
-      //p_f_v[idx].push( njs.add( njs.mul(ds, frustum_v[idx][ii]), p ) );
-      p_f_v[idx].push( njs.mul(ds, frustum_v[idx][ii]) );
-    }
-  }
-
-  //DEBUG
-  //DEBUG
-  console.log("# local p[", p_idx, "], fence:", p_fence, " frustum:");
-  for (let idx=0; idx<p_f_v.length; idx++) {
-    for (let ii=0; ii<p_f_v[idx].length; ii++) {
-      console.log(p[0], p[1], p[2]);
-      //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
-      let _vt = njs.add(p, p_f_v[idx][ii]);
-      console.log( _vt[0], _vt[1], _vt[2] );
-      console.log("\n");
+    if (_debug) {
+      console.log("# P[", p_idx, "]:", p, "ip:", ip, "Wp:", Wp, "l0:", l0, "(near_idir:", p_near_idir, ")");
 
       console.log(p[0], p[1], p[2]);
-      //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
-      _vt = njs.add(p, njs.mul(grid_n, p_f_v[idx][ii]));
-      console.log( _vt[0], _vt[1], _vt[2] );
+      console.log(p[0] + l0*v_idir[p_near_idir][0], p[1] + l0*v_idir[p_near_idir][1], p[2] + l0*v_idir[p_near_idir][2]);
       console.log("\n");
     }
-  }
 
-  console.log("# l0 test");
-  for (let ii=0; ii<4; ii++) {
-    console.log(p[0], p[1], p[2]);
-    let _vt = njs.add( p, njs.mul( t0, frustum_v[p_near_idir][ii] ) );
-    console.log(_vt[0], _vt[1], _vt[2]);
-    console.log("\n");
-  }
-  //DEBUG
-  //DEBUG
+    let p_f_v = [];
+    for (let idx=0; idx<frustum_v.length; idx++) {
+      p_f_v.push([]);
+      for (let ii=0; ii<frustum_v[idx].length; ii++) {
+        //p_f_v[idx].push( njs.add( njs.mul(ds, frustum_v[idx][ii]), p ) );
+        p_f_v[idx].push( njs.mul(ds, frustum_v[idx][ii]) );
+      }
+    }
 
-  let nei_q_idx = [];
-  for (let i=0; i<info.P.length; i++) {
-    if (i==p_idx) { continue; }
-    nei_q_idx.push(i);
-  }
+    if (_debug) {
+      //DEBUG
+      //DEBUG
+      console.log("# local p[", p_idx, "], fence:", p_fence, " frustum:");
+      for (let idx=0; idx<p_f_v.length; idx++) {
+        for (let ii=0; ii<p_f_v[idx].length; ii++) {
+          console.log(p[0], p[1], p[2]);
+          //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
+          let _vt = njs.add(p, p_f_v[idx][ii]);
+          console.log( _vt[0], _vt[1], _vt[2] );
+          console.log("\n");
 
-  for (let nei_idx=0; nei_idx < nei_q_idx.length; nei_idx++) {
-    let q_idx = nei_q_idx[nei_idx];
+          console.log(p[0], p[1], p[2]);
+          //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
+          _vt = njs.add(p, njs.mul(grid_n, p_f_v[idx][ii]));
+          console.log( _vt[0], _vt[1], _vt[2] );
+          console.log("\n");
+        }
+      }
 
-    let q = info.P[q_idx];
+      console.log("# l0 test");
+      for (let ii=0; ii<4; ii++) {
+        console.log(p[0], p[1], p[2]);
+        let _vt = njs.add( p, njs.mul( t0, frustum_v[p_near_idir][ii] ) );
+        console.log(_vt[0], _vt[1], _vt[2]);
+        console.log("\n");
+      }
+      //DEBUG
+      //DEBUG
+    }
 
-    let dqp = njs.sub(q,p);
-    let qp2 = njs.norm2Squared(dqp);
+    //  points in fence (index)
+    //
+    let pif_list = [];
 
-    let t_frustum = [];
-    for (let idir=0; idir<p_f_v.length; idir++) {
-      t_frustum.push([]);
+    for (let ir = 0; ir < grid_n; ir++) {
 
-      let pos_count = 0;
-      let min_tI = grid_n;
+      let fenced_in = true;
+      for (let ii=0; ii<p_fence.length; ii++) {
+        if (p_fence[ii] > ir) { fenced_in = false; break; }
+      }
+      if (fenced_in) {
 
-      let _debug_vidx = -1;
-      let _debug_t = -1;
+        //console.log("#fenced in (fence:", p_fence, "), breaking");
 
-      for (let ii=0; ii<p_f_v[idir].length; ii++) {
+        break;
+      }
 
-        let v = p_f_v[idir][ii];
+      let sweep = grid_sweep_perim_3d(info, info.P[p_idx], ir);
 
-        let qp_v = njs.dot(dqp,v);
+      //console.log("# ir:", ir);
+      //console.log(sweep);
 
-        if ( Math.abs(qp_v) < _eps) {
+      /*
+      let sweep_q_idx = [];
+      for (let i=0; i<info.P.length; i++) {
+        if (i==p_idx) { continue; }
+        sweep_q_idx.push(i);
+      }
+      */
 
-          console.log("#skipping p_frustum[", idir, "][", ii, "]: ( (q-p).v =", qp_v, ")");
-
-          continue;
+      let sweep_q_idx = [];
+      for (let path_idx = 0; path_idx < sweep.path.length; path_idx++) {
+        let ixyz = sweep.path[path_idx];
+        let grid_bin = info.grid[ixyz[2]][ixyz[1]][ixyz[0]];
+        for (let bin_idx = 0; bin_idx < grid_bin.length; bin_idx++) {
+          sweep_q_idx.push( grid_bin[bin_idx] );
         }
 
-        let t = qp2 / qp_v;
-        if (t < 0) { continue; }
-
-        let tI = Math.floor(t - t0);
-
-        console.log("##>> F[", idir, "][", ii, "] p:", p, "q:", q, "t:", t, "t0:", t0, "tI:", tI);
-
-        pos_count++;
-        if (tI < min_tI) {
-          min_tI = tI;
-          _debug_vidx = ii;
-          _debug_t = t;
-        }
-
+        //DEBUG
+        //console.log("# grid_bin[", ixyz, "]:", grid_bin.join(","));
+        //DEBUG
 
       }
 
-      if (pos_count == 4) {
-        if (p_fence[idir] > min_tI) {
-          p_fence[idir] = min_tI;
+      for (let nei_idx=0; nei_idx < sweep_q_idx.length; nei_idx++) {
+        let q_idx = sweep_q_idx[nei_idx];
+        if (q_idx == p_idx) { continue; }
 
-          if (_debug_vidx >= 0) {
-            console.log(q[0], q[1], q[2]);
-            let _v = njs.add(p, njs.mul(_debug_t, p_f_v[idir][_debug_vidx])) ;
-            console.log( _v[0], _v[1], _v[2] );
-            console.log("\n");
+        pif_list.push( q_idx );
+
+        let q = info.P[q_idx];
+
+        let dqp = njs.sub(q,p);
+        let qp2 = njs.norm2Squared(dqp);
+
+        let t_frustum = [];
+        for (let idir=0; idir<p_f_v.length; idir++) {
+          t_frustum.push([]);
+
+          let pos_count = 0,
+              min_tI = grid_n;
+
+          let _debug_vidx = -1, _debug_t = -1;
+
+          for (let ii=0; ii<p_f_v[idir].length; ii++) {
+
+            let v = p_f_v[idir][ii];
+
+            let qp_v = njs.dot(dqp,v);
+
+            if ( Math.abs(qp_v) < _eps) {
+
+              if (_debug) {
+                console.log("#skipping p_frustum[", idir, "][", ii, "]: ( (q-p).v =", qp_v, ")");
+              }
+
+              continue;
+            }
+
+            let t = qp2 / qp_v;
+            if (t < 0) { continue; }
+
+            let tI = Math.floor(t - t0);
+
+            if (_debug) {
+              console.log("##>> F[", idir, "][", ii, "] p:", p, "q:", q, "t:", t, "t0:", t0, "tI:", tI);
+            }
+
+            pos_count++;
+            if (tI < min_tI) {
+              min_tI = tI;
+              _debug_vidx = ii;
+              _debug_t = t;
+            }
+
           }
 
-          console.log("## UPDATING FENCE>> pos_count:", pos_count, "idir:", idir, "fence now:", p_fence, "from q[", q_idx, "]:", q);
+          if (pos_count == 4) {
+            if (p_fence[idir] > min_tI) {
+              p_fence[idir] = min_tI;
+
+              //DEBUG
+              //DEBUG
+              if (_debug) {
+                if (_debug_vidx >= 0) {
+                  console.log(q[0], q[1], q[2]);
+                  let _v = njs.add(p, njs.mul(_debug_t, p_f_v[idir][_debug_vidx])) ;
+                  console.log( _v[0], _v[1], _v[2] );
+                  console.log("\n");
+                }
+
+                console.log("## UPDATING FENCE (p_idx:", p_idx, "ir:", ir, ")>> pos_count:", pos_count,
+                  "idir:", idir, "fence now:", p_fence, "from q[", q_idx, "]:", q);
+              }
+              //DEBUG
+              //DEBUG
+
+            }
+          }
+
         }
+
+      } // END for nei_idx in sweep
+
+    } // END for ir
+
+
+    // naive relative neighborhood graph detection by considering
+    // all points in fence
+    //
+    for (let i = 0; i < pif_list.length; i++) {
+      let q_idx = pif_list[i];
+
+      let _found = true;
+      for (let j = 0; j < pif_list.length; j++) {
+        if (i==j) { continue; }
+
+        let u_idx = pif_list[j];
+
+        if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
+          _found = false;
+          break;
+        }
+      }
+      if (_found) {
+        E.push([p_idx, q_idx]);
       }
 
     }
 
   }
 
-
-  return info;
+  return { "P": P, "E": E };
 }
 
 //perf_experiment();
@@ -1474,67 +1562,67 @@ function grid_sweep_perim_3d(ctx, pnt, ir) {
   let mxyz = [ ipnt[0] - ir, ipnt[1] - ir, ipnt[2] - ir ];
   let Mxyz = [ ipnt[0] + ir+1, ipnt[1] + ir+1, ipnt[2] + ir+1 ];
 
-  console.log("#", mxyz, Mxyz);
+  //console.log("#", mxyz, Mxyz);
 
   for (let ix=mxyz[0]; ix<Mxyz[0]; ix++) {
     for (let iy=mxyz[1]; iy<Mxyz[1]; iy++) {
       if (!oob([ix,iy,mxyz[2]], _grid_bbox)) {
 
-        console.log("## xy-:", ix, iy, mxyz[2]);
+        //console.log("## xy-:", ix, iy, mxyz[2]);
 
         info.path.push([ix,iy,mxyz[2]]);
       }
       if (mxyz[2] == (Mxyz[2]-1)) { continue; }
       if (!oob([ix,iy,Mxyz[2]-1], _grid_bbox)) {
 
-        console.log("## xy+:", ix, iy, Mxyz[2]-1);
+        //console.log("## xy+:", ix, iy, Mxyz[2]-1);
 
         info.path.push([ix,iy,Mxyz[2]-1]);
       }
     }
   }
 
-  console.log("#\n#");
+  //console.log("#\n#");
 
   for (let iy=mxyz[1]; iy<Mxyz[1]; iy++) {
     for (let iz=(mxyz[2]+1); iz<(Mxyz[2]-1); iz++) {
       if (!oob([mxyz[0], iy, iz], _grid_bbox)) {
 
-        console.log("## yz-:", mxyz[0], iy, iz);
+        //console.log("## yz-:", mxyz[0], iy, iz);
 
         info.path.push([mxyz[0], iy, iz]);
       }
       if (mxyz[0] == (Mxyz[0]-1)) { continue; }
       if (!oob([Mxyz[0]-1, iy, iz], _grid_bbox)) {
 
-        console.log("## yz+:", Mxyz[0]-1, iy, iz);
+        //console.log("## yz+:", Mxyz[0]-1, iy, iz);
 
         info.path.push([Mxyz[0]-1, iy, iz]);
       }
     }
   }
 
-  console.log("#\n#");
+  //console.log("#\n#");
 
   for (let ix=(mxyz[0]+1); ix<(Mxyz[0]-1); ix++) {
     for (let iz=(mxyz[2]+1); iz<(Mxyz[2]-1); iz++) {
       if (!oob([ix, mxyz[1], iz], _grid_bbox)) {
 
-        console.log("## xz-:", ix, mxyz[1], iz);
+        //console.log("## xz-:", ix, mxyz[1], iz);
 
         info.path.push([ix, mxyz[1], iz]);
       }
       if (mxyz[1] == (Mxyz[1]-1)) { continue; }
       if (!oob([ix, Mxyz[1]-1, iz], _grid_bbox)) {
 
-        console.log("## xz+:", ix, Mxyz[1]-1, iz);
+        //console.log("## xz+:", ix, Mxyz[1]-1, iz);
 
         info.path.push([ix, Mxyz[1]-1, iz]);
       }
     }
   }
 
-  console.log("#\n#");
+  //console.log("#\n#");
 
   return info;
 }
@@ -1583,8 +1671,8 @@ function test_grid_sweep_perim_3d() {
 
   process.exit();
 }
-test_grid_sweep_perim_3d();
-process.exit();
+//test_grid_sweep_perim_3d();
+//process.exit();
 //DEBUG
 //DEBUG
 
@@ -2186,34 +2274,37 @@ function print_edge(P, E) {
 
 }
 
-let res0 = gen_instance_2d_fence(10000);
-print_edge(res0.P, res0.E);
-process.exit();
 
-var prof_ctx = {};
-for (let n=10000; n<100000; n+=1000) {
-  console.log(n);
-  prof_s(prof_ctx, "n" + n.toString());
-  let res0 = gen_instance_2d_fence(n);
+function __cruft() {
+  let res0 = gen_instance_2d_fence(10000);
+  print_edge(res0.P, res0.E);
+  process.exit();
 
-  prof_e(prof_ctx, "n" + n.toString());
+  var prof_ctx = {};
+  for (let n=10000; n<100000; n+=1000) {
+    console.log(n);
+    prof_s(prof_ctx, "n" + n.toString());
+    let res0 = gen_instance_2d_fence(n);
 
-  prof_print(prof_ctx);
-  
-  //print_edge(res0.P, res0.E);
+    prof_e(prof_ctx, "n" + n.toString());
+
+    prof_print(prof_ctx);
+    
+    //print_edge(res0.P, res0.E);
+  }
+
+
+  process.exit();
+
+  let res1 = gen_instance_2d(res0.P.length, undefined, res0.P);
+  print_edge(res1.P, res1.E);
+
+  let _lp = lune_points( res0.P[157], res0.P[33] );
+  print_point(_lp);
+
+  process.exit();
+
 }
-
-
-process.exit();
-
-let res1 = gen_instance_2d(res0.P.length, undefined, res0.P);
-print_edge(res1.P, res1.E);
-
-let _lp = lune_points( res0.P[157], res0.P[33] );
-print_point(_lp);
-
-process.exit();
-
 
 
 //test_grid_sweep_perim_2d();
@@ -2471,8 +2562,9 @@ function _xxx() {
 
 function main() {
 
-  let info = gen_instance_3d_fence(1000);
+  let info = gen_instance_3d_fence(32);
   print_point(info.P, 1);
+  print_E(info.P, info.E);
   process.exit();
 
 
@@ -2483,6 +2575,6 @@ function main() {
   process.exit();
 }
 
-//main();
+main();
 
 
