@@ -123,6 +123,15 @@ var _rnd = srand("lunenetwork");
 
 var DEBUG_LEVEL = 0;
 
+var _debug_stat = {
+  "count": {},
+  "val": {}
+};
+
+var prof_ctx = {
+};
+
+
 var N = 10;
 var pnt = [];
 
@@ -132,7 +141,8 @@ function poisson_point(N, D) {
   for (let i=0; i<N; i++) {
     let p = [];
     for (let j=0; j<D; j++) {
-      p.push( Math.random() );
+      //p.push( Math.random() );
+      p.push( _rnd() );
     }
     pnt.push(p);
   }
@@ -217,8 +227,138 @@ function lune_points( a, b, seg, connect ) {
   return p;
 }
 
-N = 10;
-pnt = poisson_point(N, 2);
+function check_cmp(res, edge) {
+  let resE = [];
+  let n = res.P.length;
+
+  for (let i=0; i<n; i++) {
+    resE.push([]);
+    for (let j=0; j<n; j++) {
+      resE[i].push(0);
+    }
+  }
+
+  for (let i=0; i<res.E.length; i++) {
+    let a = res.E[i][0];
+    let b = res.E[i][1];
+
+    resE[a][b] = 1;
+    resE[b][a] = 1;
+  }
+
+  let mismatch_count = 0;
+
+  for (let i=0; i<n; i++) {
+    for (let j=0; j<n; j++) {
+      if (resE[i][j] != edge[i][j]) {
+        console.log("mismatch", i, j);
+        mismatch_count++;
+      }
+    }
+  }
+
+  if (mismatch_count > 0) { return false; }
+  return true;
+}
+
+//----
+//----
+//----
+
+function print_E(pnt, edge) {
+
+  for (let i=0; i<edge.length; i++) {
+    let a = edge[i][0];
+    let b = edge[i][1];
+
+    let p = pnt[a];
+    let q = pnt[b];
+
+    if (p.length == 2) {
+      console.log(p[0], p[1]);
+      console.log(q[0], q[1]);
+    }
+    else {
+      console.log(p[0], p[1], p[2]);
+      console.log(q[0], q[1], q[2]);
+    }
+    console.log("\n");
+  }
+}
+
+function print_E_naive(pnt, edge) {
+
+  for (let i=0; i<edge.length; i++) {
+    for (let j=0; j<edge.length; j++) {
+
+      if (edge[i][j] == 0) { continue; }
+
+      let p = pnt[i];
+      let q = pnt[j];
+
+      if (p.length == 2) {
+        console.log(p[0], p[1]);
+        console.log(q[0], q[1]);
+      }
+      else {
+        console.log(p[0], p[1], p[2]);
+        console.log(q[0], q[1], q[2]);
+      }
+      console.log("\n");
+    }
+  }
+}
+
+// small tests for validation
+//
+function small_2d_tests() {
+  let _N = [10,20,30,40,50,100,200,300];
+
+  let _debug_output = true;
+
+  let passed = true;
+
+  for (let ii=0; ii<_N.length; ii++) {
+    N = _N[ii];
+    pnt = poisson_point(N, 2);
+
+    let res = gen_instance_2d_fence(N, pnt);
+    let Echeck = naive_relnei_E(pnt);
+
+    let _cr = check_cmp(res, Echeck);
+    let sfx = (_cr ? "ok" : "error");
+
+    if (_debug_output) {
+      console.log("# n:", N, ", got:", _cr, "(", sfx, ")");
+    }
+
+    if (!_cr) { passed = false; }
+  }
+
+  return passed;
+}
+
+function main() {
+
+  let _n = 100000;
+  let _pnt = poisson_point(_n, 2);
+  let res = gen_instance_2d_fence(_n, _pnt);
+
+  process.exit();
+}
+
+main();
+
+
+//-----------
+//-----------
+//-----------
+//-----------
+//-----------
+//-----------
+//-----------
+//-----------
+//-----------
 
 function naive_relnei_E(pnt) {
   let n = pnt.length;
@@ -421,14 +561,6 @@ function octant_index_2d(p,q) {
 
   return octant_lookup[idx];
 }
-
-var _debug_stat = {
-  "count": {},
-  "val": {}
-};
-
-var prof_ctx = {
-};
 
 function prof_s(ctx, name) {
   if (!(name in ctx)) {
@@ -1508,10 +1640,8 @@ function print_fence(fence) {
 
 // WIP!!
 //
-function gen_instance_2d_fence(n) {
-  //let n = 301;
-  //let n = 128001;
-  //n = 501;
+function gen_instance_2d_fence(n, _point) {
+  _point = ((typeof _point === "undefined") ? [] : _point);
 
   let _eps = 1 / (1024*1024*1024);
 
@@ -1562,7 +1692,11 @@ function gen_instance_2d_fence(n) {
   //
   for (let i=0; i<n; i++) {
     //let pnt = [ Math.random()*grid_size[0] + grid_start[0], Math.random()*grid_size[1] + grid_start[1] ];
-    let pnt = [ _rnd()*grid_size[0] + grid_start[0], _rnd()*grid_size[1] + grid_start[1] ];
+    let pnt = [0,0];
+    if ( i < _point.length ) { pnt = _point[i]; }
+    else {
+      pnt = [ _rnd()*grid_size[0] + grid_start[0], _rnd()*grid_size[1] + grid_start[1] ];
+    }
     info.point.push(pnt);
     info.point_grid_bp.push([-1,-1]);
     info.edge.push([]);
