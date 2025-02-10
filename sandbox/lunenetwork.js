@@ -147,7 +147,7 @@ function print_point(pnt, disconnect) {
     else {
       console.log(pnt[i][0], pnt[i][1], pnt[i][2]);
     }
-    if (disconnect) { console.log(""); }
+    if (disconnect) { console.log("\n"); }
   }
   console.log("");
 }
@@ -490,6 +490,312 @@ function perf_experiment() {
   process.exit();
 
 }
+
+
+
+function gen_instance_3d_fence(n, B, _point) {
+  _point = ((typeof _point === "undefined") ? [] : _point);
+
+  let _eps = 1 / (1024*1024*1024);
+
+  let info = {
+    "dim": 3,
+    "start": [0,0,0],
+    "size": [1,1,1],
+    "point": [],
+    "point_grid_bp": [],
+    "grid_cell_size": [-1,-1,-1],
+    "bbox": [[0,0,1], [1,1,1]],
+    "grid": [],
+    "edge": [],
+    "P": [],
+    "E": []
+  };
+
+  let s3 = Math.cbrt(3)/2;
+
+  let v_idir = [
+    [1,0,0], [-1,0,0],
+    [0,1,0], [0,-1,0],
+    [0,0,1], [0,0,-1]
+  ];
+
+  // 0 : +x, 1 : -x
+  // 2 : +y, 3 : -y
+  // 4 : +z, 5 : -z
+  //
+  let frustum_v = [
+    [ [ s3, s3, s3 ], [ s3,-s3, s3 ], [ s3,-s3,-s3 ], [ s3, s3,-s3 ] ],
+    [ [-s3, s3, s3 ], [-s3, s3,-s3 ], [-s3,-s3,-s3 ], [-s3,-s3, s3 ] ],
+
+    [ [ s3, s3, s3 ], [ s3, s3,-s3 ], [-s3, s3,-s3 ], [-s3, s3, s3 ] ],
+    [ [ s3,-s3, s3 ], [-s3,-s3, s3 ], [-s3,-s3,-s3 ], [ s3,-s3,-s3 ] ],
+
+    [ [ s3, s3, s3 ], [-s3, s3, s3 ], [-s3,-s3, s3 ], [ s3,-s3, s3 ] ],
+    [ [ s3, s3,-s3 ], [ s3,-s3,-s3 ], [-s3,-s3,-s3 ], [-s3, s3,-s3 ] ]
+
+  ];
+
+
+  //DEBUG
+  //DEBUG
+  let debug_frustum = false;
+  if (debug_frustum) {
+    for (let idir=0; idir<frustum_v.length; idir++) {
+      let fr = frustum_v[idir];
+      for (let v_idx=0; v_idx<fr.length; v_idx++) {
+        console.log(fr[v_idx][0],fr[v_idx][1],fr[v_idx][2]);
+      }
+      console.log(fr[0][0],fr[0][1],fr[0][2]);
+      console.log("\n");
+    }
+  }
+  //DEBUG
+  //DEBUG
+
+  let grid_s = Math.cbrt(n);
+  let grid_n = Math.ceil(grid_s);
+
+  let ds = 1 / grid_n;
+
+  info.grid_cell_size[0] = ds;
+  info.grid_cell_size[1] = ds;
+  info.grid_cell_size[2] = ds;
+  info.grid_n = grid_n;
+  info.grid_s = grid_s;
+
+  // init grid
+  //
+  for (let i=0; i<grid_n; i++) {
+    info.grid.push([]);
+    for (let j=0; j<grid_n; j++) {
+      info.grid[i].push([]);
+      for (let k=0; k<grid_n; k++) {
+        info.grid[i][j].push([]);
+      }
+    }
+  }
+
+  let grid_size  = [ 1, 1, 1 ];
+  let grid_start = [ 0,0, 0 ];
+  let grid_cell_size = [ ds, ds, ds ];
+
+  info.start = grid_start;
+  info.size = grid_size;
+
+  // initialize points, creating random ones if ncessary
+  //
+  for (let i=0; i<n; i++) {
+    if (i < _point.length) {
+      info.point.push(_point[i]);
+    }
+    else {
+      let pnt = [
+        Math.random()*grid_size[0] + grid_start[0],
+        Math.random()*grid_size[1] + grid_start[1],
+        Math.random()*grid_size[2] + grid_start[2]
+    ];
+      info.point.push(pnt);
+    }
+    info.point_grid_bp.push([-1,-1,-1]);
+    info.edge.push([]);
+  }
+
+
+  info.P = info.point;
+
+  // setup lll grid binning
+  //
+  for (let i=0; i<n; i++) {
+    let ix = Math.floor(info.point[i][0]*grid_n);
+    let iy = Math.floor(info.point[i][1]*grid_n);
+    let iz = Math.floor(info.point[i][2]*grid_n);
+    info.grid[iz][iy][ix].push(i);
+    info.point_grid_bp[i] = [ix,iy,iz];
+  }
+
+  //DEBUG
+  //DEBUG
+  //print grid
+  let _debug_grid = false;
+  if (_debug_grid) {
+    console.log("#grid (grid_n:", grid_n, "ds:", ds,  ")");
+    for (let iz=0; iz<info.grid.length; iz++) {
+      for (let iy=0; iy<info.grid[iz].length; iy++) {
+        for (let ix=0; ix<info.grid[iz][iy].length; ix++) {
+          console.log( ix*ds, iy*ds, iz*ds );
+          console.log( (ix+1)*ds, iy*ds, iz*ds );
+          console.log("\n");
+
+          console.log( ix*ds, iy*ds, iz*ds );
+          console.log( ix*ds, (iy+1)*ds, iz*ds );
+          console.log("\n");
+
+          console.log( ix*ds, iy*ds, iz*ds );
+          console.log( ix*ds, iy*ds, (iz+1)*ds );
+          console.log("\n");
+
+        }
+      }
+    }
+  }
+  //DEBUG
+  //DEBUG
+
+
+  let p_idx = 0;
+  let p = info.P[p_idx];
+
+  let Wp = [ p[0]*grid_n, p[1]*grid_n, p[2]*grid_n ];
+  let ip = Wp.map( Math.floor );
+
+  let p_fence = [
+    grid_n-ip[0], ip[0],
+    grid_n-ip[1], ip[1],
+    grid_n-ip[2], ip[2]
+  ];
+
+  let p_near_idir = 1;
+  let l0 = Wp[0] - ip[0];
+  for (let xyz=0; xyz<3; xyz++) {
+    let _l = Wp[xyz] - ip[xyz];
+    if (_l < l0) {
+      p_near_idir = 2*xyz + 1;
+      l0 = _l;
+    }
+    _l = 1 - (Wp[xyz] - ip[xyz]);
+    if (_l < l0) {
+      p_near_idir = 2*xyz + 0;
+      l0 = _l;
+    }
+  }
+  l0 *= ds;
+  let t0 = l0*Math.cbrt(3);
+
+  console.log("# P[", p_idx, "]:", p, "ip:", ip, "Wp:", Wp, "l0:", l0, "(near_idir:", p_near_idir, ")");
+
+  console.log(p[0], p[1], p[2]);
+  console.log(p[0] + l0*v_idir[p_near_idir][0], p[1] + l0*v_idir[p_near_idir][1], p[2] + l0*v_idir[p_near_idir][2]);
+  console.log("\n");
+
+  let p_f_v = [];
+  for (let idx=0; idx<frustum_v.length; idx++) {
+    p_f_v.push([]);
+    for (let ii=0; ii<frustum_v[idx].length; ii++) {
+      //p_f_v[idx].push( njs.add( njs.mul(ds, frustum_v[idx][ii]), p ) );
+      p_f_v[idx].push( njs.mul(ds, frustum_v[idx][ii]) );
+    }
+  }
+
+  //DEBUG
+  //DEBUG
+  console.log("# local p[", p_idx, "], fence:", p_fence, " frustum:");
+  for (let idx=0; idx<p_f_v.length; idx++) {
+    for (let ii=0; ii<p_f_v[idx].length; ii++) {
+      console.log(p[0], p[1], p[2]);
+      //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
+      let _vt = njs.add(p, p_f_v[idx][ii]);
+      console.log( _vt[0], _vt[1], _vt[2] );
+      console.log("\n");
+
+      console.log(p[0], p[1], p[2]);
+      //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
+      _vt = njs.add(p, njs.mul(grid_n, p_f_v[idx][ii]));
+      console.log( _vt[0], _vt[1], _vt[2] );
+      console.log("\n");
+    }
+  }
+
+  console.log("# l0 test");
+  for (let ii=0; ii<4; ii++) {
+    console.log(p[0], p[1], p[2]);
+    let _vt = njs.add( p, njs.mul( t0, frustum_v[p_near_idir][ii] ) );
+    console.log(_vt[0], _vt[1], _vt[2]);
+    console.log("\n");
+  }
+  //DEBUG
+  //DEBUG
+
+  let nei_q_idx = [];
+  for (let i=0; i<info.P.length; i++) {
+    if (i==p_idx) { continue; }
+    nei_q_idx.push(i);
+  }
+
+  for (let nei_idx=0; nei_idx < nei_q_idx.length; nei_idx++) {
+    let q_idx = nei_q_idx[nei_idx];
+
+    let q = info.P[q_idx];
+
+    let dqp = njs.sub(q,p);
+    let qp2 = njs.norm2Squared(dqp);
+
+    let t_frustum = [];
+    for (let idir=0; idir<p_f_v.length; idir++) {
+      t_frustum.push([]);
+
+      let pos_count = 0;
+      let min_tI = grid_n;
+
+      let _debug_vidx = -1;
+      let _debug_t = -1;
+
+      for (let ii=0; ii<p_f_v[idir].length; ii++) {
+
+        let v = p_f_v[idir][ii];
+
+        let qp_v = njs.dot(dqp,v);
+
+        if ( Math.abs(qp_v) < _eps) {
+
+          console.log("#skipping p_frustum[", idir, "][", ii, "]: ( (q-p).v =", qp_v, ")");
+
+          continue;
+        }
+
+        let t = qp2 / qp_v;
+        if (t < 0) { continue; }
+
+        let tI = Math.floor(t - t0);
+
+        console.log("##>> F[", idir, "][", ii, "] p:", p, "q:", q, "t:", t, "t0:", t0, "tI:", tI);
+
+        pos_count++;
+        if (tI < min_tI) {
+          min_tI = tI;
+          _debug_vidx = ii;
+          _debug_t = t;
+        }
+
+
+      }
+
+      if (pos_count == 4) {
+        if (p_fence[idir] > min_tI) {
+          p_fence[idir] = min_tI;
+
+          if (_debug_vidx >= 0) {
+            console.log(q[0], q[1], q[2]);
+            let _v = njs.add(p, njs.mul(_debug_t, p_f_v[idir][_debug_vidx])) ;
+            console.log( _v[0], _v[1], _v[2] );
+            console.log("\n");
+          }
+
+          console.log("## UPDATING FENCE>> pos_count:", pos_count, "idir:", idir, "fence now:", p_fence, "from q[", q_idx, "]:", q);
+        }
+      }
+
+    }
+
+  }
+
+
+  return info;
+}
+
+let info = gen_instance_3d_fence(1000);
+print_point(info.P, 1);
+process.exit();
 
 //perf_experiment();
 
