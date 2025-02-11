@@ -251,7 +251,12 @@ function check_cmp(res, edge) {
   for (let i=0; i<n; i++) {
     for (let j=0; j<n; j++) {
       if (resE[i][j] != edge[i][j]) {
-        console.log("mismatch", i, j);
+
+        if (DEBUG_LEVEL > 0) {
+          console.log("# mismatch", i, j);
+        }
+          console.log("# mismatch", i, j);
+
         mismatch_count++;
       }
     }
@@ -870,6 +875,10 @@ function gen_instance_3d_fence(n, B, _point) {
 
   for (let p_idx = 0; p_idx < info.P.length; p_idx++) {
 
+    //FAILURE DEBUGGING
+    //if ((p_idx == 14) || (p_idx==15)){ _debug = true; }
+    //else { _debug = false; }
+
     //let p_idx = 0;
     let p = info.P[p_idx];
 
@@ -953,29 +962,25 @@ function gen_instance_3d_fence(n, B, _point) {
 
     for (let ir = 0; ir < grid_n; ir++) {
 
+      if (_debug) {
+        console.log("# ir:", ir, "fence:", p_fence.join(","));
+      }
+
+
       let fenced_in = true;
       for (let ii=0; ii<p_fence.length; ii++) {
-        if (p_fence[ii] > ir) { fenced_in = false; break; }
+        if (p_fence[ii] >= ir) { fenced_in = false; break; }
       }
       if (fenced_in) {
 
-        //console.log("#fenced in (fence:", p_fence, "), breaking");
+        if (_debug) {
+          console.log("#fenced in (fence:", p_fence, "), breaking");
+        }
 
         break;
       }
 
       let sweep = grid_sweep_perim_3d(info, info.P[p_idx], ir);
-
-      //console.log("# ir:", ir);
-      //console.log(sweep);
-
-      /*
-      let sweep_q_idx = [];
-      for (let i=0; i<info.P.length; i++) {
-        if (i==p_idx) { continue; }
-        sweep_q_idx.push(i);
-      }
-      */
 
       let sweep_q_idx = [];
       for (let path_idx = 0; path_idx < sweep.path.length; path_idx++) {
@@ -986,7 +991,9 @@ function gen_instance_3d_fence(n, B, _point) {
         }
 
         //DEBUG
-        //console.log("# grid_bin[", ixyz, "]:", grid_bin.join(","));
+        if (_debug) {
+          console.log("# grid_bin", ixyz, ":", grid_bin.join(","));
+        }
         //DEBUG
 
       }
@@ -994,6 +1001,10 @@ function gen_instance_3d_fence(n, B, _point) {
       for (let nei_idx=0; nei_idx < sweep_q_idx.length; nei_idx++) {
         let q_idx = sweep_q_idx[nei_idx];
         if (q_idx == p_idx) { continue; }
+
+        if (_debug) {
+          console.log("# adding q_idx:", q_idx, "to pif_list (", pif_list.join(","), ") (p_idx:", p_idx, ")");
+        }
 
         pif_list.push( q_idx );
 
@@ -1007,7 +1018,8 @@ function gen_instance_3d_fence(n, B, _point) {
           t_frustum.push([]);
 
           let pos_count = 0,
-              min_tI = grid_n;
+              min_tI = grid_n,
+              max_tI = -1;
 
           let _debug_vidx = -1, _debug_t = -1;
 
@@ -1038,6 +1050,10 @@ function gen_instance_3d_fence(n, B, _point) {
             pos_count++;
             if (tI < min_tI) {
               min_tI = tI;
+            }
+
+            if (tI > max_tI) {
+              max_tI = tI;
               _debug_vidx = ii;
               _debug_t = t;
             }
@@ -1045,8 +1061,11 @@ function gen_instance_3d_fence(n, B, _point) {
           }
 
           if (pos_count == 4) {
-            if (p_fence[idir] > min_tI) {
-              p_fence[idir] = min_tI;
+            //if (p_fence[idir] > min_tI) {
+              //p_fence[idir] = min_tI;
+
+            if (p_fence[idir] > max_tI) {
+              p_fence[idir] = max_tI;
 
               //DEBUG
               //DEBUG
@@ -1077,6 +1096,11 @@ function gen_instance_3d_fence(n, B, _point) {
     // naive relative neighborhood graph detection by considering
     // all points in fence
     //
+
+    if (_debug) {
+      console.log("# naive rng for p_idx:", p_idx, "on pif_list:", pif_list.join(","));
+    }
+
     for (let i = 0; i < pif_list.length; i++) {
       let q_idx = pif_list[i];
 
@@ -1086,20 +1110,40 @@ function gen_instance_3d_fence(n, B, _point) {
 
         let u_idx = pif_list[j];
 
+        if (_debug) {
+          console.log("# u:", u_idx, "in lune(", p_idx, q_idx,")?", in_lune(P[p_idx], P[q_idx], P[u_idx]));
+        }
+
         if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
+
+          if (_debug) {
+            console.log("# u_idx:", u_idx, "in lune of (", p_idx, ",", q_idx, ")");
+          }
+
           _found = false;
           break;
         }
       }
       if (_found) {
+
+        if (_debug) {
+          console.log("# adding (", p_idx, q_idx, ")");
+        }
+
         E.push([p_idx, q_idx]);
+
+      }
+      else {
+        if (_debug) {
+          console.log("# skipping (", p_idx, q_idx, ")");
+        }
       }
 
     }
 
   }
 
-  return { "P": P, "E": E };
+  return { "P": P, "E": E, "info": info };
 }
 
 //perf_experiment();
@@ -2570,23 +2614,194 @@ function _xxx() {
 
 }
 
+function failing0() {
+  let P = [
+    [0.44584097480654905,0.2630677410107003,0.978063734762359],
+    [0.8792005129276691,0.9569835189557732,0.4981144569316643],
+
+    // !!
+    [0.7302476517208656,0.4085662385644728,0.8950140702477447],
+    // !!
+
+    [0.4021124780579683,0.3027373978303754,0.6800684457807135],
+
+    // !!
+    [0.40536140905436313,0.6930924860922895,0.8439412700390785],
+    // !!
+
+    [0.8046564969848393,0.02887287542893153,0.9445998333212928],
+    [0.4472281866578808,0.7399787104118357,0.940831312948197],
+    [0.4024911152400458,0.9972875928707101,0.6140172162073474],
+    [0.45340850104715535,0.48780232400880913,0.2571819484664662],
+    [0.1309191022868963,0.29401818315842815,0.024937234825944187]
+  ];
+
+  let res_fence = gen_instance_3d_fence(P.length, [[0,0,0],[1,1,1]], P);
+  let res_naive = naive_relnei_E(P);
+
+  print_point(res_fence.P, 1);
+  print_E(res_fence.P, res_fence.E);
+
+  let _cmp_res = check_cmp(res_fence, res_naive.A);
+
+  if (!_cmp_res) {
+    console.log("# mismatch!!");
+  }
+}
+
+function failing1() {
+  let P = [
+
+[0.48236153119999786,0.5829562578210701,0.5894499262133782],
+[0.40226423198824285,0.18571662125302568,0.8676381195370179],
+[0.33215985928550007,0.7072200784349136,0.8788649781571626],
+[0.48895317751943884,0.3456950558866528,0.7701554499785753],
+[0.2902892853701606,0.17521479079563637,0.9474716241453544],
+[0.2801319609391316,0.9000756739056867,0.10790588342455201],
+[0.7257716226289987,0.9872984729307688,0.6558161569627607],
+[0.20155954725594033,0.05141859488332581,0.4873397088251342],
+
+  //!!
+[0.38641533071261625,0.19886654954131305,0.1412455118739861],
+  //!!
+
+[0.9430324013584659,0.5791526363231108,0.8927393680820273],
+[0.4569842977471846,0.9361777812913996,0.8644125468436177],
+[0.044553879420293645,0.643883319861713,0.9199383885412326],
+[0.3995710006357906,0.3124296141199602,0.7713934061210598],
+[0.052040577538081334,0.47600458330531326,0.4871463395672549],
+
+//!!
+[0.37520407169511805,0.7350236931845794,0.1331874245080567],
+[0.7484014367367805,0.3342644552089469,0.12295008151606544],
+//!!
+
+[0.8238535262366712,0.9172865900773475,0.629972129987517],
+[0.26076817231777033,0.798646842066488,0.1639779261157275],
+[0.1922848467550962,0.6117787464338532,0.9838191584318533],
+[0.9281548838754002,0.8630286046201179,0.16849134805951754]
+];
+
+
+  let res_fence = gen_instance_3d_fence(P.length, [[0,0,0],[1,1,1]], P);
+  let res_naive = naive_relnei_E(P);
+
+  print_point(res_fence.P, 1);
+  print_E(res_fence.P, res_fence.E);
+
+  let _cmp_res = check_cmp(res_fence, res_naive.A);
+
+  let p_idx = 14;
+  let q_idx = 15;
+  let u_idx = 8;
+
+  let info = res_fence.info;
+
+  let cell_size = info.grid_cell_size;
+  console.log("#ds:", cell_size);
+
+  console.log("# u_idx:", u_idx, "in lune(", p_idx, q_idx,"):", in_lune(P[p_idx], P[q_idx], P[u_idx]));
+  console.log("# u_idx:", u_idx, "in lune(", q_idx, p_idx,"):", in_lune(P[q_idx], P[p_idx], P[u_idx]));
+
+  let p_ixyz = [
+    Math.floor( P[p_idx][0] / cell_size[0]),
+    Math.floor( P[p_idx][1] / cell_size[1]),
+    Math.floor( P[p_idx][2] / cell_size[2])
+  ]
+
+  let q_ixyz = [
+    Math.floor( P[q_idx][0] / cell_size[0]),
+    Math.floor( P[q_idx][1] / cell_size[1]),
+    Math.floor( P[q_idx][2] / cell_size[2])
+  ]
+
+  let u_ixyz = [
+    Math.floor( P[u_idx][0] / cell_size[0]),
+    Math.floor( P[u_idx][1] / cell_size[1]),
+    Math.floor( P[u_idx][2] / cell_size[2])
+  ];
+  console.log("# p_idx:", p_idx, "P[", p_idx,"]:", P[p_idx], "ixyz:", p_ixyz);
+  console.log("# q_idx:", q_idx, "P[", q_idx,"]:", P[q_idx], "ixyz:", q_ixyz);
+  console.log("# u_idx:", u_idx, "P[", u_idx,"]:", P[u_idx], "ixyz:", u_ixyz);
+
+  for (let u_idx=0; u_idx < P.length; u_idx++) {
+    if ((u_idx == p_idx) || (u_idx == q_idx)){ continue; }
+    if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
+      console.log("##!!!! u_idx:", u_idx, "in lune(", p_idx, q_idx, ")");
+    }
+  }
+
+  //let u_idx = 15;
+  //P = res_fence.P;
+  //console.log("#0: u_idx", u_idx, "in lune(", p_idx, q_idx, ")?", in_lune(P[p_idx], P[q_idx], P[u_idx]));
+  //P = res_naive.P;
+  //console.log("#1: u_idx", u_idx, "in lune(", p_idx, q_idx, ")?", in_lune(P[p_idx], P[q_idx], P[u_idx]));
+
+  //console.log("#???", res_naive.A[14][15], res_naive.A[15][14]);
+
+  if (!_cmp_res) {
+    console.log("# mismatch!!");
+  }
+  else {
+    console.log("# ok, match");
+  }
+}
+
 function main() {
 
-  let Ntest = [10,10,10,20,20,20,30,30,30,
-               50,100];
+  //failing0();
+  //failing1();
+  //return;
+
+  let Ntest = [
+    10,10,10,20,20,20,30,30,30,
+    50,50,
+    100,100,
+    200,200,
+    300,400,
+    500, 600,
+    700, 800,
+    900, 1000
+  ];
+
+  /*
+  Ntest = [];
+  for (let i=0; i<100; i++) {
+    Ntest.push(20);
+  }
+  */
 
   for (let n_idx=0; n_idx < Ntest.length; n_idx++) {
     let N = Ntest[n_idx];
     let _pnts = poisson_point(N, 3);
 
+
+    console.log("# fence start");
+
     let info = gen_instance_3d_fence(N, [[0,0,0],[1,1,1]], _pnts);
+
+    console.log("# fence done");
+
     //print_point(info.P, 1);
     //print_E(info.P, info.E);
 
+    console.log("# naive start");
+
     let naive_res = naive_relnei_E(info.P);
+
+    console.log("# naive done");
+
     //print_E(naive_res.P, naive_res.E);
 
-    console.log("#", N, "{", n_idx,"}", check_cmp(info, naive_res.A));
+    let _cmp_res = check_cmp(info, naive_res.A);
+
+    if (!_cmp_res) {
+      console.log("#check failed, points:");
+      print_point(info.P);
+      break;
+    }
+
+    console.log("#", N, "{", n_idx,"}", _cmp_res);
 
   }
 
