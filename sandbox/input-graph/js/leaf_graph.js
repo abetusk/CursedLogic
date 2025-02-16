@@ -70,7 +70,10 @@ function _mousemove(id, ev) {
     g_ctx[id].cursor.position.x = _x;
     g_ctx[id].cursor.position.y = _y;
 
-    let r = g_ctx[id].cursor.radius;
+    let rx = g_ctx[id].cursor.width/2;
+    let ry = g_ctx[id].cursor.height/2;
+
+    let r = rx;
 
     //console.log(_x, _y);
 
@@ -82,12 +85,15 @@ function _mousemove(id, ev) {
       let dx = px-_x;
       let dy = py-_y;
 
-      if ( Math.sqrt(dx*dx + dy*dy) < r ) {
+      let _d2 = (dx*dx/(rx*rx)) + (dy*dy/(ry*ry));
 
-        let dx0 = Math.sqrt( (r*r) - (dy*dy) );
+      if ( _d2 < 1 ) {
+
+        let _disc = 1 - ((dy*dy)/(ry*ry));
+        if (_disc < 0) { continue; }
+
+        let dx0 = rx * Math.sqrt(_disc);
         let dx1 = -dx0;
-
-        let theta = Math.atan2(-(py-_y), px-_x);
 
         let tx0 = [ _x + dx0, py ];
         let tx1 = [ _x + dx1, py ];
@@ -104,6 +110,7 @@ function _mousemove(id, ev) {
         }
 
       }
+
     }
 
     let t = Date.now();
@@ -112,28 +119,36 @@ function _mousemove(id, ev) {
       g_ctx[id].two.update();
     }
 
-
   }
-  //g_ctx[id].state = "mu":
+
 }
 
 function _mousewheel(ev) {
-  console.log("?", ev.shiftKey, g_ctx.focus, (ev.wheelDelta < 0) ? -1 : 1);
 
   if (g_ctx.focus == "g_x") {
+
+    console.log(ev.button, ev.buttons);
+
     if (ev.shiftKey) {
-      let r = g_ctx[ g_ctx.focus ].cursor.radius;
+      let rx = g_ctx[ g_ctx.focus ].cursor.width/2;
+      let ry = g_ctx[ g_ctx.focus ].cursor.height/2;
       if (ev.wheelDelta < 0) {
-        r--;
-        if (r > 5) {
-          g_ctx[ g_ctx.focus ].cursor.radius = r;
+        rx--;
+        if (ev.buttons == 0) { ry--; }
+        if ((rx > 5) &&
+            (ry > 5)) {
+          g_ctx[ g_ctx.focus ].cursor.width = 2*rx;
+          g_ctx[ g_ctx.focus ].cursor.height = 2*ry;
           g_ctx[ g_ctx.focus ].two.update();
         }
       }
       else if (ev.wheelDelta > 0) {
-        r++;
-        if (r < 100) {
-          g_ctx[ g_ctx.focus ].cursor.radius = r;
+        rx++;
+        if (ev.buttons == 0) { ry++; }
+        if ((rx < 100) &&
+            (ry < 100)) {
+          g_ctx[ g_ctx.focus ].cursor.width = 2*rx;
+          g_ctx[ g_ctx.focus ].cursor.height = 2*ry;
           g_ctx[ g_ctx.focus ].two.update();
         }
 
@@ -194,7 +209,8 @@ function init() {
       _mouseenter(key[ii], ev);
     });
 
-    g_ctx[key[ii]].cursor = g_ctx[key[ii]].two.makeCircle(50,50,20);
+    //g_ctx[key[ii]].cursor = g_ctx[key[ii]].two.makeCircle(50,50,20);
+    g_ctx[key[ii]].cursor = g_ctx[key[ii]].two.makeEllipse(50,50,20, 20);
 
     two.update();
   }
