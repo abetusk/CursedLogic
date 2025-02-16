@@ -1,4 +1,5 @@
 
+let njs = numeric;
 
 var g_ctx = {
 
@@ -15,6 +16,7 @@ var g_ctx = {
     "data_ref": 50,
     "two_data": [],
     "cursor": {},
+    "transform": [],
     "two_data_aux": []
   },
 
@@ -25,6 +27,7 @@ var g_ctx = {
     "data_ref": 200,
     "two_data": [],
     "cursor": {},
+    "transform": [],
     "two_data_aux": []
   },
 
@@ -35,11 +38,43 @@ var g_ctx = {
     "data": [],
     "data_ref": 0,
     "two_data": [],
+
+    "two_data_growth": [],
+
     "cursor": {},
+    "transform": [],
     "two_data_aux": []
   }
 
 };
+
+
+function grow_f() {
+
+  let pnts = [];
+
+  let ctx = g_ctx.f;
+
+  let raw_pnt = [ [], [], [] ];
+  for (let i=0; i<ctx.two_data.length; i++) {
+    //raw_pnt.push( [ ctx.two_data[i].position.x, ctx.two_data[i].position.y, 1 ] );
+    raw_pnt[0].push( ctx.two_data[i].position.x );
+    raw_pnt[1].push( ctx.two_data[i].position.y );
+    raw_pnt[2].push( 1 );
+  }
+
+  let pnt_t = njs.dot( ctx.transform, raw_pnt );
+
+  let pnt = [];
+
+  for (let i=0; i<pnt_t[0].length; i++) {
+    pnt.push( [ pnt_t[0][i], pnt_t[1][i], pnt_t[2][i] ] );
+  }
+
+  for (let i=0; i<pnt.length; i++) {
+    console.log(pnt[i][0], pnt[i][1], pnt[i][2] );
+  }
+}
 
 function _mouseenter(id, ev) {
   g_ctx[id].state = "me";
@@ -338,36 +373,151 @@ function _mousewheel(ev) {
 function setup_g_x_graph() {
   let N = 100;
 
-  let _lx = g_ctx.g_x.data_ref;
-  let _lh = g_ctx.g_x.size[1];
-  let _ref_line = g_ctx.g_x.two.makeLine( _lx, 0, _lx, _lh );
-  g_ctx.g_x.two_data_aux.push( _ref_line );
+  let ctx = g_ctx.g_x;
+
+  let H = ctx.size[1];
+  let W = ctx.size[0];
+
+  let _lx = ctx.data_ref;
+  let _lh = ctx.size[1];
+  let _ref_line = ctx.two.makeLine( _lx, 0, _lx, _lh );
+  _ref_line.stroke = "rgba(0,0,0,0.3)";
+  ctx.two_data_aux.push( _ref_line );
+
+  let stride = 30;
+  for (let y = (ctx.size[1]-stride); y >= 0; y -= stride) {
+    let _guide_line = ctx.two.makeLine( 0, y, ctx.size[0], y );
+    _guide_line.stroke = "rgba(32,32,32,0.15)";
+    ctx.two_data_aux.push( _guide_line );
+  }
 
   for (let i=0; i<N; i++) {
-    let _y = i * g_ctx.g_x.size[1] / N;
-    let _x = g_ctx.g_x.data_ref;
-    let _c = g_ctx.g_x.two.makeCircle( _x, _y, 1 );
-    g_ctx.g_x.two_data.push(_c);
+    let _y = i * ctx.size[1] / N;
+    let _x = ctx.data_ref;
+    let _c = ctx.two.makeCircle( _x, _y, 0.5 );
+    ctx.two_data.push(_c);
   }
-  g_ctx.g_x.two.update();
+  ctx.two.update();
+
+  ctx.transform = [
+    [ 0,-1,  H ],
+    [ 1, 0, -ctx.data_ref  ],
+    [ 0, 0, 1 ]
+  ];
+
+  //console.log( njs.dot( ctx.transform, [ctx.data_ref, 20, 1] ) );
+  //console.log( njs.dot( ctx.transform, [ctx.data_ref+5, 25, 1] ) );
+  //console.log( njs.dot( ctx.transform, [ctx.data_ref, H, 1] ) );
 }
 
 function setup_g_y_graph() {
 
   let N = 100;
 
-  let _ly = g_ctx.g_y.data_ref;
-  let _lw = g_ctx.g_y.size[0];
-  let _ref_line = g_ctx.g_y.two.makeLine( 0, _ly, _lw, _ly );
-  g_ctx.g_y.two_data_aux.push( _ref_line );
+  let ctx = g_ctx.g_y;
+
+  let W = ctx.size[0];
+  let H = ctx.size[1];
+
+  let w2 = W/2;
+
+  let _ly = ctx.data_ref;
+  let _lw = ctx.size[0];
+  let _ref_line = ctx.two.makeLine( 0, _ly, _lw, _ly );
+  _ref_line.stroke = "rgba(0,0,0,0.3)";
+  ctx.two_data_aux.push( _ref_line );
+
+  let stride = 30;
+  for (let x = 0; x < ctx.size[0]; x += stride) {
+    let _guide_line = ctx.two.makeLine( x, 0, x, ctx.size[1] );
+    _guide_line.stroke = "rgba(32,32,32,0.15)";
+    ctx.two_data_aux.push( _guide_line );
+  }
 
   for (let i=0; i<N; i++) {
-    let _x = i * g_ctx.g_y.size[0] / N;
-    let _y = g_ctx.g_y.data_ref;
-    let _c = g_ctx.g_y.two.makeCircle( _x, _y, 1 );
-    g_ctx.g_y.two_data.push(_c);
+    let _x = i * ctx.size[0] / N;
+    let _y = ctx.data_ref;
+    let _c = ctx.two.makeCircle( _x, _y, 0.5 );
+    ctx.two_data.push(_c);
   }
-  g_ctx.g_y.two.update();
+  ctx.two.update();
+
+
+  ctx.transform = [
+    [ 1, 0,  -w2 ],
+    [ 0, -1, +ctx.data_ref],
+    [ 0, 0, 1 ]
+  ];
+
+  let _debug = true;
+  if (_debug) {
+    console.log( njs.dot( ctx.transform, [0, ctx.data_ref, 1] ) );
+    console.log( njs.dot( ctx.transform, [w2, ctx.data_ref, 1] ) );
+    console.log( njs.dot( ctx.transform, [w2, ctx.data_ref - 30, 1] ) );
+    console.log( njs.dot( ctx.transform, [W, ctx.data_ref, 1] ) );
+  }
+}
+
+function setup_f_graph() {
+
+  let ctx = g_ctx.f;
+
+  let H = ctx.size[1];
+  let W = ctx.size[0];
+
+  let w2 = W/2;
+
+  let seedling = [];
+
+  let h0 = 50;
+  let w0 = 25;
+  let r = w0;
+
+  let n_l = 10;
+  let n_r = 10;
+  let n_t = 20;
+
+  for (let i=0; i<n_l; i++) {
+    let y = H - (h0*i/n_l);
+    let x = w2 - w0;
+    let _c = ctx.two.makeCircle( x,y, 0.5 );
+    ctx.two_data.push(_c);
+  }
+
+  let cxy = {"x": w2, "y": H-h0 };
+  for (let i=0; i<n_t; i++) {
+    let theta = Math.PI - (i*Math.PI/(n_t-1));
+    let x = Math.cos(-theta)*r + cxy.x;
+    let y = Math.sin(-theta)*r + cxy.y;
+    let _c = ctx.two.makeCircle( x,y, 0.5 );
+    ctx.two_data.push(_c);
+  }
+
+  for (let i=(n_r-1); i>=0; i--) {
+    let y = H - (h0*i/n_r);
+    let x = w2 + w0;
+    let _c = ctx.two.makeCircle( x,y, 0.5 );
+    ctx.two_data.push(_c);
+  }
+
+  ctx.transform = [
+    [ 1, 0, -w2 ],
+    [ 0,-1,  H ],
+    [ 0, 0, 1]
+  ];
+
+  // for context
+  //
+  let _debug = false;
+  if (_debug) {
+    console.log( njs.dot( ctx.transform, [w2-w0, H, 1] ));
+    console.log( njs.dot( ctx.transform, [w2-w0, H-h0, 1] ));
+    console.log( njs.dot( ctx.transform, [w2, H-h0-w0, 1] ));
+    console.log( njs.dot( ctx.transform, [w2+w0, H-h0, 1] ));
+    console.log( njs.dot( ctx.transform, [w2+w0, H, 1] ));
+  }
+
+  ctx.two.update();
 }
 
 function init() {
@@ -426,12 +576,19 @@ function init() {
 
     //g_ctx[key[ii]].cursor = g_ctx[key[ii]].two.makeCircle(50,50,20);
     g_ctx[key[ii]].cursor = g_ctx[key[ii]].two.makeEllipse(50,50,20, 20);
-    g_ctx[key[ii]].cursor.stroke = "rgba(0,0,0,0.1)";
+
+    if (key[ii] == "f") {
+      g_ctx[key[ii]].cursor.stroke = "rgba(0,0,0,0.0)";
+    }
+    else {
+      g_ctx[key[ii]].cursor.stroke = "rgba(0,0,0,0.1)";
+    }
 
     two.update();
   }
 
   setup_g_x_graph();
   setup_g_y_graph();
+  setup_f_graph();
 
 }
