@@ -23,6 +23,7 @@ else {
 
 
 let N = 2500;
+N = 5500;
 let S = 10000;
 let rho =  S / Math.sqrt(N);
 
@@ -156,7 +157,8 @@ function _transformL(line, dx, dy, s) {
 }
 
 function space_col_init() {
-  let rand_alg = "halton"; // "random"
+  //let rand_alg = "halton"; // "random"
+  let rand_alg = "random";
 
   g_info.auxin = [];
 
