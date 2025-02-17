@@ -49,31 +49,158 @@ var g_ctx = {
 };
 
 
+function viz2world(two_data, transform) {
+  let viz_pnt = [];
+  for (let i=0; i<two_data.length; i++) {
+    viz_pnt.push( [ two_data[i].position.x, two_data[i].position.y, 1 ] );
+  }
+  return njs.transpose( njs.dot( transform, njs.transpose( viz_pnt ) ) );
+}
+
+function _print_point( pnt ) {
+  for (let i=0; i<pnt.length; i++) {
+    console.log( pnt[i][0], pnt[i][1], pnt[i][2] );
+  }
+}
+
+function afx(x, a) {
+  let n = a.length;
+
+  if (x <= a[0][0]) { return a[0][1]; }
+  if (x >= a[n-1][0]) { return a[n-1][1]; }
+
+  let iter = 0;
+  let max_iter = 30;
+
+  let l_x = a[0][0];
+  let l_y = a[0][1];
+
+  let r_x = a[n-1][0];
+  let r_y = a[n-1][0];
+
+  let l_idx = 0;
+  let r_idx = n-1;
+  let m_idx = 0;
+
+  // I'm almost positive ther'es a bug here.
+  // I can never remember the boundary conditions.
+  // Investigate further
+  //
+  while ( (r_idx-l_idx) > 1 ) {
+    m_idx = l_idx + Math.floor( (r_idx-l_idx)/2 );
+    if ( x <= a[m_idx][0] ) {
+      r_idx = m_idx;
+    }
+    else {
+      l_idx = m_idx;
+    }
+
+    //console.log(l_idx, m_idx, r_idx, "(x:", x, ", a[", l_idx, "]:", a[l_idx], "a[", m_idx, "]", a[m_idx], "a[", r_idx, "]", a[r_idx], ")");
+
+    iter++;
+    if (iter >= max_iter) {
+      console.log("!!!!", l_x, m_x, r_x, x );
+      break;
+    }
+
+  }
+
+  if (a[m_idx][0] < x) {
+
+    //console.log("cp0");
+
+    l_x = a[m_idx][0];
+    l_y = a[m_idx][1];
+
+    if ( (m_idx+1) < n ) {
+      r_x = a[m_idx+1][0];
+      r_y = a[m_idx+1][1];
+    }
+  }
+  else {
+    //console.log("cp1");
+
+    if ( (m_idx-1) >= 0 ) {
+      l_x = a[m_idx-1][0];
+      l_y = a[m_idx-1][1];
+    }
+
+    r_x = a[m_idx][0];
+    r_y = a[m_idx][1];
+  }
+
+
+  let p = (x - l_x) / (r_x - l_x);
+
+  //console.log( "p:", p, "r_x - l_x:", r_x - l_x, "x - l_x", x - l_x, "r_y-l_y:", r_y-l_y, "*p:", (r_y-l_y)*p);
+
+  return l_y + ((r_y - l_y)*p);
+
+}
+
+
 function grow_f() {
 
-  let pnts = [];
+  let f_pnt = viz2world( g_ctx.f.two_data, g_ctx.f.transform );
+  let g_x_pnt = viz2world( g_ctx.g_x.two_data, g_ctx.g_x.transform );
+  let g_y_pnt = viz2world( g_ctx.g_y.two_data, g_ctx.g_y.transform );
 
-  let ctx = g_ctx.f;
+  let W = g_ctx.f.size[0];
+  let H = g_ctx.f.size[1];
+  let w2 = W/2;
 
-  let raw_pnt = [ [], [], [] ];
-  for (let i=0; i<ctx.two_data.length; i++) {
-    //raw_pnt.push( [ ctx.two_data[i].position.x, ctx.two_data[i].position.y, 1 ] );
-    raw_pnt[0].push( ctx.two_data[i].position.x );
-    raw_pnt[1].push( ctx.two_data[i].position.y );
-    raw_pnt[2].push( 1 );
+  g_x_pnt.sort( function(a,b) { return (a[0] < b[0]) ? -1 : ( (a[0] == b[0]) ? 0 : 1 ) ; } )
+  g_y_pnt.sort( function(a,b) { return (a[0] < b[0]) ? -1 : ( (a[0] == b[0]) ? 0 : 1 ) ; } )
+
+  let ds = 1/6;
+
+  if ( g_ctx.f.two_data_growth.length > 0 ) {
+    g_ctx.f.two.remove( g_ctx.f.two_data_growth );
+    g_ctx.f.two_data_growth = [];
+    g_ctx.f.two.update();
   }
 
-  let pnt_t = njs.dot( ctx.transform, raw_pnt );
+  let boundary_point = [];
+  let cur_boundary = f_pnt;
 
-  let pnt = [];
+  boundary_point.push(cur_boundary);
 
-  for (let i=0; i<pnt_t[0].length; i++) {
-    pnt.push( [ pnt_t[0][i], pnt_t[1][i], pnt_t[2][i] ] );
+  for (let it=0; it<10; it++) {
+
+    let nxt_boundary = [];
+
+    let _gpnt = [];
+    for (let i=0; i<cur_boundary.length; i++) {
+      let x = cur_boundary[i][0];
+      let y = cur_boundary[i][1];
+
+      // experimenting...
+      let dx = ds*afx( y, g_y_pnt );
+      let dy = ds*afx( y, g_x_pnt );
+
+      if (x < 0) { dx *= -1; }
+
+      let x1 = x + dx;
+      let y1 = y + dy;
+
+      nxt_boundary.push( [x1, y1, 1 ] );
+
+      let vzx = x1+w2;
+      let vzy = H-y1;
+
+      let _c = g_ctx.f.two.makeCircle( vzx, vzy, 0.5 );
+      _c.fill = "rgba(255,0,0,0.2)";
+      _c.stroke = "rgba(255,0,0,0.2)";
+
+      g_ctx.f.two_data_growth.push(_c);
+    }
+
+    boundary_point.push( nxt_boundary );
+    cur_boundary = nxt_boundary;
+
   }
 
-  for (let i=0; i<pnt.length; i++) {
-    console.log(pnt[i][0], pnt[i][1], pnt[i][2] );
-  }
+  g_ctx.f.two.update();
 }
 
 function _mouseenter(id, ev) {
@@ -188,8 +315,17 @@ function _mousemove(id, ev) {
           let jx0 = Math.abs( px - tx0[0] );
           let jx1 = Math.abs( px - tx1[0] );
 
-          if ((jx1 < jx0) &&
-              (tx1[0] > g_ctx[id].data_ref)) {
+          if (ev.shiftKey) {
+            if (tx1[0] < g_ctx[id].data_ref) {
+              pnt[ii].position.x = g_ctx[id].data_ref;
+            }
+            else {
+              pnt[ii].position.x = tx1[0];
+            }
+          }
+
+          else if ((jx1 < jx0) &&
+                   (tx1[0] > g_ctx[id].data_ref)) {
             pnt[ii].position.x = tx1[0];
           }
           else {
@@ -253,8 +389,17 @@ function _mousemove(id, ev) {
           let jy0 = Math.abs( py - t0[1] );
           let jy1 = Math.abs( py - t1[1] );
 
-          if ((jy0 < jy1) &&
-              (t0[1] < g_ctx[id].data_ref)) {
+          if (ev.shiftKey) {
+            if (t0[1] > g_ctx[id].data_ref) {
+              pnt[ii].position.y = g_ctx[id].data_ref;
+            }
+            else {
+              pnt[ii].position.y = t0[1];
+            }
+          }
+
+          else if ((jy0 < jy1) &&
+                   (t0[1] < g_ctx[id].data_ref)) {
             pnt[ii].position.y = t0[1];
           }
           else {
@@ -444,12 +589,13 @@ function setup_g_y_graph() {
 
 
   ctx.transform = [
-    [ 1, 0,  -w2 ],
+    //[ 1, 0,  -w2 ],
+    [ 1, 0,  0 ],
     [ 0, -1, +ctx.data_ref],
     [ 0, 0, 1 ]
   ];
 
-  let _debug = true;
+  let _debug = false;
   if (_debug) {
     console.log( njs.dot( ctx.transform, [0, ctx.data_ref, 1] ) );
     console.log( njs.dot( ctx.transform, [w2, ctx.data_ref, 1] ) );
@@ -473,9 +619,9 @@ function setup_f_graph() {
   let w0 = 25;
   let r = w0;
 
-  let n_l = 10;
-  let n_r = 10;
-  let n_t = 20;
+  let n_l = 40;
+  let n_r = 40;
+  let n_t = 501;
 
   for (let i=0; i<n_l; i++) {
     let y = H - (h0*i/n_l);
