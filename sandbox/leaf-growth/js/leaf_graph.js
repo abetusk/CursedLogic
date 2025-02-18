@@ -139,6 +139,13 @@ function afx(x, a) {
 }
 
 
+function _normalize_g(a) {
+  let S = 0.0;
+  for (let i=1; i<a.length; i++) {
+    S += a[i]
+  }
+}
+
 function grow_f() {
 
   let f_pnt = viz2world( g_ctx.f.two_data, g_ctx.f.transform );
@@ -151,6 +158,10 @@ function grow_f() {
 
   g_x_pnt.sort( function(a,b) { return (a[0] < b[0]) ? -1 : ( (a[0] == b[0]) ? 0 : 1 ) ; } )
   g_y_pnt.sort( function(a,b) { return (a[0] < b[0]) ? -1 : ( (a[0] == b[0]) ? 0 : 1 ) ; } )
+
+  _normalize_g(g_x_pnt);
+  _normalize_g(g_y_pnt);
+
 
   let ds = 1/6;
 
@@ -178,10 +189,24 @@ function grow_f() {
       let dx = ds*afx( y, g_y_pnt );
       let dy = ds*afx( y, g_x_pnt );
 
-      if (x < 0) { dx *= -1; }
+      let x1 = 0;
+      let y1 = 0;
 
-      let x1 = x + dx;
-      let y1 = y + dy;
+      let blech = false;
+      if (blech) {
+        if (x < 0) { dx *= -1; }
+        let x1 = x + dx;
+        let y1 = y + dy;
+      }
+      else {
+        if (x < 0) {
+          x1 = -x*(1+dx/20);
+        }
+        else {
+          x1 = x*(1+dx/20);
+        }
+        y1 = y*(1+dy/20);
+      }
 
       nxt_boundary.push( [x1, y1, 1 ] );
 
@@ -619,8 +644,8 @@ function setup_f_graph() {
   let w0 = 25;
   let r = w0;
 
-  let n_l = 40;
-  let n_r = 40;
+  let n_l = 400;
+  let n_r = 400;
   let n_t = 501;
 
   for (let i=0; i<n_l; i++) {
