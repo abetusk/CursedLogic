@@ -2019,6 +2019,292 @@ function lune_bbox(p,q) {
 
 //
 //
+function lune_network_shrinking_fence_2d(n, _point) {
+  _point = ((typeof _point === "undefined") ? [] : _point);
+
+  let _eps = 1 / (1024*1024*1024);
+
+  let info = {
+    "dim": 2,
+    "start": [0,0],
+    "size": [1,1],
+    "point": [],
+    "point_grid_bp": [],
+    "grid_cell_size": [-1,-1],
+    "bbox": [[0,0], [1,1]],
+    "grid": [],
+    "edge": []
+  };
+
+  let pi4 = Math.PI/4;
+  let s2 = Math.sqrt(2)/2;
+
+  let grid_s = Math.sqrt(n);
+  let grid_n = Math.ceil(grid_s);
+
+  let ds = 1 / grid_n;
+  let s2ds = s2*ds;
+
+  let v_idir = [
+    [1,0], [-1,0],
+    [0,1], [0,-1]
+  ];
+
+  let frustum_v = [
+    [ [ s2ds, s2ds ], [ s2ds, -s2ds ] ],
+    [ [-s2ds, s2ds ], [-s2ds, -s2ds ] ],
+
+    [ [ s2ds, s2ds ], [-s2ds,  s2ds ] ],
+    [ [ s2ds,-s2ds ], [-s2ds, -s2ds ] ]
+  ];
+
+  info.grid_cell_size[0] = ds;
+  info.grid_cell_size[1] = ds;
+  info.grid_n = grid_n;
+  info.grid_s = grid_s;
+
+  if (DEBUG_LEVEL > 0) {
+    console.log("# grid_n:", info.grid_n, "cell_size:", info.grid_cell_size, "grid_s:", info.grid_s, "ds:", ds);
+  }
+
+  // alloc grid
+  //
+  for (let i=0; i<grid_n; i++) {
+    info.grid.push([]);
+    for (let j=0; j<grid_n; j++) {
+      info.grid[i].push([]);
+    }
+  }
+
+  let grid_size  = [ 1, 1 ];
+  let grid_start = [ 0,0 ];
+  let grid_cell_size = [ ds, ds ];
+
+  info.start = grid_start;
+  info.size = grid_size;
+
+  // alloc and create random points
+  //
+  for (let i=0; i<n; i++) {
+    let pnt = [0,0];
+    if ( i < _point.length ) { pnt = _point[i]; }
+    else {
+      pnt = [ _rnd()*grid_size[0] + grid_start[0], _rnd()*grid_size[1] + grid_start[1] ];
+    }
+    info.point.push(pnt);
+    info.point_grid_bp.push([-1,-1]);
+  }
+
+  // push points into grid, linear linked list/array for dups
+  //
+  for (let i=0; i<n; i++) {
+    let ix = Math.floor(info.point[i][0]*grid_n);
+    let iy = Math.floor(info.point[i][1]*grid_n);
+    info.grid[iy][ix].push(i);
+    info.point_grid_bp[i] = [ix,iy];
+  }
+
+
+  if (DEBUG_LEVEL > 1) {
+    print_point(info.point, true);
+  }
+
+  let P = info.point;
+  let E = [];
+
+  let octant2idir = [ 0, 2,2, 1,1, 3,3 0 ];
+
+  for (let p_idx = 0; p_idx < info.point.length; p_idx++) {
+
+    let p = info.point[p_idx];
+
+    let Wp = [ grid_n*p[0], grid_n*p[1] ];
+    let ip = Wp.map( Math.floor );
+    let p_fence = [
+      grid_n - ip[0], ip[0],
+      grid_n - ip[1], ip[1]
+    ];
+
+    // +x [+y,-y], -x [+y,-y],
+    // +y [+x,-x], -y [+x,-x]
+    //
+    let p_fence_win = [
+      [ 0, 1 ], [ 0, 1 ],
+      [ 0, 1 ], [ 0, 1 ]
+    ];
+
+    // points in fence
+    //
+    let pif_list = [];
+
+
+    if (DEBUG_LEVEL > 1) {
+      console.log("# p:", p, "(idx:", p_idx, ")");
+      console.log("# init p_fence_idx:", p_fence_idx, "(ip:", ip, ")");
+      console.log("# p (point[0])");
+      console.log(p[0],p[1], "\n");
+    }
+
+
+    // calculate l0, the distance to learest grid bin
+    // and t0, the time it takes for a point along
+    // the frustum line to hit the initial grid boundary
+    //
+
+    let l0 = Wp[0] - ip[0];
+    for (let xy=0; xy<2; xy++) {
+      let _l = Wp[xy] - ip[xy];
+      if (_l < l0) { l0 = _l; }
+
+      _l = 1.0 - (Wp[xy] - ip[xy]);
+      if (_l < l0) { l0 = _l; }
+    }
+    l0 *= ds;
+    let t0 = l0*Math.sqrt(2);
+
+    for (let ir=0; ir<info.grid_n; ir++) {
+
+      if (DEBUG_LEVEL > 1) {
+        console.log("#ir:", ir);
+      }
+
+      // fence within current fence radius
+      //
+      let fenced_in = true;
+      for (let idir=0; idir<4; idir++) {
+        if (ir < p_fence_idx[idir]) { fenced_in = false; break; }
+      }
+
+      if (fenced_in) {
+        if (DEBUG_LEVEL > 2) {
+          console.log("#end search (0) (ir", ir, ", fence:", p_fence_idx , ", fence_wind:", p_fence_win, ")");
+        }
+        break;
+      }
+
+      // window fence has completely closed
+      //
+      fenced_in = true;
+      for (let idir=0; idir<4; idir++) {
+        if (p_fence_win[idir][0] < p_fence_win[idir][1]) {
+          fenced_in = false;
+          break;
+        }
+      }
+
+      if (fenced_in) {
+        if (DEBUG_LEVEL > 2) {
+          console.log("#end search (1) (ir", ir, ", fence:", p_fence_idx ,", fence_win:", p_fence_win, ")");
+        }
+        break;
+      }
+
+      let sweep = grid_sweep_perim_2d(info, p, ir);
+
+      if (DEBUG_LEVEL > 2) {
+        console.log("# sweep.path:", sweep.path.join(";"));
+      }
+
+      let sweep_q_idx = [];
+      for (let path_idx=0; path_idx < sweep.path.length; path_idx++) {
+
+        let ix = sweep.path[path_idx][0];
+        let iy = sweep.path[path_idx][1];
+        let grid_bin = info.grid[iy][ix];
+        for (let bin_idx=0; bin_idx < grid_bin.length; bin_idx++) {
+          sweep_q_idx.push( grid_bin[bin_idx] );
+        }
+
+        for (let nei_idx=0; nei_idx < sweep_q_idx.length; nei_idx++) {
+
+          let q_idx = sweep_q_idx[nei_idx];
+          if (q_idx == p_idx) { continue; }
+
+          pif_list.push( q_idx );
+
+          let q = info.P[q_idx];
+
+          let sqp = njs.sub(q,p);
+          let qp2 = njs.norm2Squared(dqp);
+
+          for (let idir=0; idir<frustum_v.length; idir++) {
+
+            let pos_count = 0,
+                min_tI = grid_n,
+                max_tI = -1;
+
+            // count the number of frustum intersections,
+            //
+            for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+              let v = frustum_v[idir][f_idx];
+              let qp_v = njs.dot(sqp,v);
+
+              // perpendicular, ignore
+              //
+              if ( Math.abs(qp_v) < _eps ) { continue; }
+
+              let t = qp2 / qp_v;
+
+              // in the other direction, skip
+              //
+              if (t < 0) { continue; }
+
+              let tI = Math.floor(t - t0);
+
+              pos_count++;
+              if (tI < min_tI) { min_tI = tI; }
+              if (tI > max_tI) { max_tI = tI; }
+
+            }
+
+            // we're in the frustum and we have a new secure point
+            // for it
+            //
+            if ((pos_count == 2) &&
+                (p_fence[idir] > max_tI)) {
+              p_fence[idir] = max_tI;
+            }
+
+          }
+
+        }
+
+      }
+    }
+
+    if (DEBUG_LEVEL > 2) {
+      console.log("#pif_list.length:", pif_list.length);
+    }
+
+    // do a naive RNG centered on p
+    //
+    for (let i=0; i<pif_list.length; i++) {
+
+      let q_idx = pif_list[i];
+
+      let _found = true;
+      for (let j=0; j<pif_list.length; j++) {
+        if (i==j) { continue; }
+
+        let u_idx = pif_list[j];
+
+        if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
+          _found = false;
+          break;
+        }
+      }
+      if (_found) {
+        E.push([p_idx, q_idx]);
+      }
+    }
+
+
+  // for p_idx
+  }
+
+  return { "P": P, "E": E };
+}
+
 function gen_instance_2d_fence(n, _point) {
   _point = ((typeof _point === "undefined") ? [] : _point);
 
@@ -2115,32 +2401,7 @@ function gen_instance_2d_fence(n, _point) {
   let E = [];
 
 
-  // example point to test
-  //
-  //let p_idx = 0;
-  //let p = info.point[p_idx];
-
   for (let p_idx = 0; p_idx < info.point.length; p_idx++) {
-
-  //DEBUG
-  //for (__i=0; __i<1; __i++) {
-
-    /*
-    let p_idx = 0;
-
-    let _p = info.point[p_idx];
-
-    for (let ii=0; ii<info.point.length; ii++) {
-      if ((info.point[ii][0] < _p[0]) &&
-          (info.point[ii][1] < _p[1])) {
-        p_idx = ii;
-        _p = info.point[p_idx];
-      }
-    }
-    */
-
-    //p_idx = 26;
-  //DEBUG
 
     let p = info.point[p_idx];
 
@@ -2172,8 +2433,6 @@ function gen_instance_2d_fence(n, _point) {
     // from p to q as it intersects the edges of the enclosing fence
     // aroudn p
     //
-
-
 
     let gpi0 = grid_sweep_perim_2d(info, p, 0);
     let l0 = Math.abs(p[0] - (ds*gpi0.perim_bbox[0][0]));
@@ -2319,9 +2578,6 @@ function gen_instance_2d_fence(n, _point) {
         let u_idx = pif_list[j];
 
         if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
-
-          //console.log("##>> point", P[u_idx], "(idx:", u_idx,") in lune of {", P[p_idx], "(idx:", p_idx,"),", P[q_idx], "(idx:", q_idx,")}");
-
           _found = false;
           break;
         }
