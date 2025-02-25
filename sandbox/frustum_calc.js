@@ -29,6 +29,12 @@ function v2idir(v) {
   return 2*max_xyz;
 }
 
+function v3theta(p,q) {
+  let s = njs.norm2( cross3(p,q) );
+  let c = njs.dot(p,q);
+  return Math.atan2(s,c);
+}
+
 function plane_f(u, Np, p) {
   return njs.dot( Np, njs.sub(u, p) );
 }
@@ -177,6 +183,8 @@ function frustum3d_intersection(q, ds) {
   // 2 : +y, 3 : -y
   // 4 : +z, 5 : -z
   //
+  // ccw order
+  //
   let frustum_v = [
     [ [ L, L, L ], [ L,-L, L ], [ L,-L,-L ], [ L, L,-L ] ],
     [ [-L, L, L ], [-L, L,-L ], [-L,-L,-L ], [-L,-L, L ] ],
@@ -248,6 +256,17 @@ function frustum3d_intersection(q, ds) {
     let fv_count = 0;
     let fv_n = frustum_v[idir].length;
 
+    // frustum idir check
+    //
+    // wip
+    //
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v = frustum_v[idir][f_idx];
+    }
+    //
+    // frustum idir check
+
+
     for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
       let v = frustum_v[idir][f_idx];
 
@@ -299,15 +318,128 @@ function frustum3d_intersection(q, ds) {
 
 
 
+  let frustum_idir=-1;
+  for (idir=0; idir<6; idir++) {
+
+    // frustum idir check
+    //
+    // wip
+    //
+
+    let part_count = 0;
+    let _n = frustum_v[idir].length;
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v_cur = frustum_v[idir][f_idx];
+      let v_nxt = frustum_v[idir][(f_idx+1)%_n];
+      let vv = cross3(v_cur, v_nxt);
+      if (njs.dot(vv, q) > 0) { part_count++; }
+
+    }
+    if (part_count == _n) { frustum_idir = idir; }
+
+    //
+    // frustum idir check
+
+  }
+
+  let frame_d = [ 2, 4];
+  let frame_t = [ [ 0,0,0,0 ], [0,0,0,0] ];
+  let frame_v = [ [], [] ];
+  if (frustum_idir>=0) {
+
+    let idir = frustum_idir;
+    let _n = frustum_v[idir].length;
+
+    let Nq = njs.mul( 1 / njs.norm2(q), q );
+
+    let D = 2;
+
+
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v_cur = frustum_v[idir][f_idx];
+      let v_nxt = frustum_v[idir][(f_idx+1)%_n];
+      let vv = njs.sub(v_nxt, v_cur);
+
+      let vd_cur = njs.mul(D, v_cur);
+      let vd_nxt = njs.mul(D, v_nxt);
+      let vvd = njs.sub(vd_nxt, vd_cur);
+
+      let t1 = t_plane_line( Nq, q, v_cur, vv );
+      let td = t_plane_line( Nq, q, vd_cur, vvd );
+
+      //t1 /= njs.norm2(vv);
+      //td /= njs.norm2(vvd);
+
+      frame_t[0][f_idx] = t1;
+      frame_t[1][f_idx] = td;
+
+      frame_d[0] = njs.norm2(vv);
+      frame_d[1] = njs.norm2(vvd);
+
+      frame_v[0].push( [ v_cur, vv ] );
+      frame_v[1].push( [ vd_cur, vvd ] );
+    }
+
+  }
 
 
   return {
     "idir": found_idir,
     "idir_t": _res_t,
     "frustum_t": _frustum_t,
-    "frustum_idir": -1
+    "frustum_v": frustum_v,
+
+    "frustum_idir": frustum_idir,
+    "frame_v": frame_v,
+    "frame_d": frame_d,
+    "frame_t" : frame_t
   };
 
+}
+
+function __analyze(info, q) {
+
+  let Nq = njs.mul( 1/njs.norm2(q), q );
+  let Pq = q;
+
+  let idir_descr = [ "+x", "-x", "+y", "-y", "+z", "-z" ];
+
+  let frame_v = info.frame_v;
+  let famee_d = info.frame_d;
+  let frame_t = info.frame_t;
+
+  let idir = info.frustum_idir;
+
+  let okvec = [0,0,0,0];
+
+  //console.log("point in idir:", info.frustum_idir);
+
+  for (let i=0; i<frame_t[0].length; i++) {
+    let _f = frame_t[1][i] / frame_t[0][i];
+
+    let frame_idir = v2idir(frame_v[0][i][1]);
+    //console.log(" frame_idir:", frame_idir, idir_descr[frame_idir], ">>>", (_f > 1) ? "+++" : "---" );
+
+    //console.log(frame_v[0][i][0]);
+    let xxx = plane_f( frame_v[0][i][0], Nq, Pq );
+
+    //console.log("xxx:", xxx, "_f:", _f);
+
+    if ((xxx > 0) && ( _f > 1)) {
+      okvec[i] = 1;
+      //console.log("  away (ok)");
+    }
+    else if ((xxx < 0) && (_f < 1)) {
+      okvec[i] = 1;
+      //console.log("  closer (ok)");
+    }
+    else {
+      okvec[i] = 0;
+      //console.log("  no");
+    }
+  }
+
+  return okvec;
 }
 
 function _rnd3C() {
@@ -327,7 +459,91 @@ function investigate_q_point() {
 
   let res = frustum3d_intersection(q);
 
+  console.log(res);
+  console.log( JSON.stringify( res.frame_v[0] ) );
+  console.log( JSON.stringify( res.frame_v[1] ) );
+
+  console.log(res);
+
+  let v0 = [ 1, 1, 1];
+  let v1 = [ 1,-1, 1];
+  let v2 = [-1, 1, 1];
+  let v3 = [ 1, 1,-1];
+
+  let u0 = [-1,-1, 1];
+
+  let v01 = njs.sub(v1,v0);
+  let v02 = njs.sub(v2,v0);
+  let v03 = njs.sub(v3,v0);
+
+  let Nv0 = njs.mul( 1/njs.norm2(v0), v0 );
+  let Nv1 = njs.mul( 1/njs.norm2(v1), v1 );
+  let Nv2 = njs.mul( 1/njs.norm2(v2), v2 );
+  let Nv3 = njs.mul( 1/njs.norm2(v3), v3 );
+
+  let Nu0 = njs.mul( 1/njs.norm2(u0), u0 );
+
+  let Nv01 = njs.mul( 1/njs.norm2(v01), v01 );
+  let Nv02 = njs.mul( 1/njs.norm2(v02), v02 );
+  let Nv03 = njs.mul( 1/njs.norm2(v03), v03 );
+
+  let _s3 = Math.sqrt(3);
+
+  console.log("Nv0:", Nv0);
+  let _t = njs.mul( -1/_s3, njs.add( Nv01, njs.add(Nv02, Nv03) ) );
+  console.log("t:", _t);
+
+  console.log(">>> ang(Nv01, Nv02):", v3theta(Nv01, Nv02));
+  console.log(">>> ang(Nv01, Nv03):", v3theta(Nv01, Nv03));
+  console.log(">>> ang(Nv02, Nv03):", v3theta(Nv02, Nv03));
+
+  let a = v3theta(Nv0, Nv01);
+  console.log(">>> ang(Nv0, Nv01):", a, Math.PI - a );
+
+  console.log(">>> ang(Nv0, Nv02):", v3theta(Nv0, Nv02));
+  console.log(">>> ang(Nv0, Nv03):", v3theta(Nv0, Nv03));
+
+  a = v3theta(Nv0, Nu0);
+  console.log(">>> ang(Nv0, Nu0):", a, Math.PI - a );
+
+  console.log(">>> ang(Nv0, Nv1)", v3theta(Nv0, Nv1));
+
+  __analyze(res, q);
+
   return;
+
+}
+
+function experiment_x() {
+
+  for (let it=0; it < 10000; it++) {
+    let q = _rnd3C();
+    let res = frustum3d_intersection(q);
+
+    let _three_cut=0;
+
+    for (let idir=0; idir<6; idir++) {
+      let _count = 0;
+      for (let ii=0; ii<4; ii++) {
+        if (res.frustum_t[idir][ii] > 0) { _count++; }
+      }
+
+      if (_count==3) {
+        _three_cut ++;
+      }
+    }
+
+    if (_three_cut > 0) {
+      let ok = __analyze(res, q);
+      if ((ok[0] == 0) ||
+          (ok[1] == 0) ||
+          (ok[2] == 0) ||
+          (ok[3] == 0)) {
+        console.log(q[0], q[1], q[2]);
+      }
+    }
+
+  }
 
 }
 
@@ -490,8 +706,11 @@ function only_two_cut_region() {
 
 function main() {
 
-  //investigate_q_point();
+  //experiment_x();
   //return;
+
+  investigate_q_point();
+  return;
 
   //let q = _rnd3C();
 

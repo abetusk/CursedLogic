@@ -2112,7 +2112,7 @@ function lune_network_shrinking_fence_2d(n, _point) {
   let P = info.point;
   let E = [];
 
-  let octant2idir = [ 0, 2,2, 1,1, 3,3 0 ];
+  let octant2idir = [ 0, 2,2, 1,1, 3,3, 0 ];
 
   for (let p_idx = 0; p_idx < info.point.length; p_idx++) {
 
