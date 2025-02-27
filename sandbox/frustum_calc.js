@@ -141,6 +141,19 @@ function debug_shell(q, frustum_v) {
 // returns:
 //
 // {
+//   idir       : if q-plane fully intersects the frustum vectors, holds idir that this happens
+//                -1 if none found
+//   idir_t     : four vector of time values (positive) that the intersection happens
+//                default if idir < 0
+//
+//   frustum_idir : frustum q-point sits in
+//   frustum_t    : 'time' values of q-plane intersection to each frustum vector
+//   frustum_v    : 3d vectors of frustum vectors, origin centered ([idir][f_idx][xyz])
+//
+//   // WIP
+//   frame_d    : D values (e.g. [2,4])
+//   frame_v    : frame vectors (for D = frame_d[idx])
+//   frame_t    : frame time (q-plane intersect to frustum frame for scale D)
 // }
 //
 function frustum3d_intersection(q, ds) {
@@ -208,7 +221,7 @@ function frustum3d_intersection(q, ds) {
 
 
   //DEBUG
-  let debug_frustum = false;
+  let debug_frustum = true;
   if (debug_frustum) {
 
     debug_shell(q, frustum_v);
@@ -319,7 +332,7 @@ function frustum3d_intersection(q, ds) {
 
 
   let frustum_idir=-1;
-  for (idir=0; idir<6; idir++) {
+  for (idir = 0; idir < 6; idir++) {
 
     // frustum idir check
     //
@@ -332,9 +345,14 @@ function frustum3d_intersection(q, ds) {
       let v_cur = frustum_v[idir][f_idx];
       let v_nxt = frustum_v[idir][(f_idx+1)%_n];
       let vv = cross3(v_cur, v_nxt);
-      if (njs.dot(vv, q) > 0) { part_count++; }
+      if (njs.dot(vv, q) >= 0) { part_count++; }
+
+      console.log("## f_idx:", f_idx, "v_cur:", v_cur, "v_nxt:", v_nxt, "vv:", vv, "vv.q:", njs.dot(vv,q), "(part_count now", part_count, ")");
 
     }
+
+    console.log("## part_count:", part_count, "(/", _n, ")");
+
     if (part_count == _n) { frustum_idir = idir; }
 
     //
@@ -423,7 +441,7 @@ function __analyze(info, q) {
     //console.log(frame_v[0][i][0]);
     let xxx = plane_f( frame_v[0][i][0], Nq, Pq );
 
-    //console.log("xxx:", xxx, "_f:", _f);
+    console.log("# xxx:", xxx, "_f:", _f);
 
     if ((xxx > 0) && ( _f > 1)) {
       okvec[i] = 1;
@@ -450,8 +468,18 @@ function _rnd3C() {
   ];
 }
 
+function comment_stringify(data) {
+  let lines = JSON.stringify(data, undefined, 2).split("\n");
+  for (let i=0; i<lines.length; i++) {
+    console.log("#", lines[i]);
+  }
+}
+
 function investigate_q_point() {
+  let q;
   q =  [ 0.4608165114850644, 0.21948347420131942, 0.24588673712113795 ];
+  q =  [ 0.99, 0.01, 0.97 ];
+
   //console.log("#", q);
 
   console.log(0,0,0);
@@ -459,11 +487,20 @@ function investigate_q_point() {
 
   let res = frustum3d_intersection(q);
 
+
+  comment_stringify(res);
+
+  let __a = __analyze(res, q);
+
+  console.log("#a:", __a);
+
+  return;
+
+  /*
   console.log(res);
   console.log( JSON.stringify( res.frame_v[0] ) );
   console.log( JSON.stringify( res.frame_v[1] ) );
-
-  console.log(res);
+  */
 
   let v0 = [ 1, 1, 1];
   let v1 = [ 1,-1, 1];
@@ -491,7 +528,7 @@ function investigate_q_point() {
 
   console.log("Nv0:", Nv0);
   let _t = njs.mul( -1/_s3, njs.add( Nv01, njs.add(Nv02, Nv03) ) );
-  console.log("t:", _t);
+  console.log(" _t:", _t);
 
   console.log(">>> ang(Nv01, Nv02):", v3theta(Nv01, Nv02));
   console.log(">>> ang(Nv01, Nv03):", v3theta(Nv01, Nv03));
@@ -507,6 +544,7 @@ function investigate_q_point() {
   console.log(">>> ang(Nv0, Nu0):", a, Math.PI - a );
 
   console.log(">>> ang(Nv0, Nv1)", v3theta(Nv0, Nv1));
+  console.log(">>> ang(Nv0, Nv3)", v3theta(Nv0, Nv3));
 
   __analyze(res, q);
 
