@@ -151,10 +151,14 @@ function debug_shell(q, frustum_v) {
 //   frustum_v    : 3d vectors of frustum vectors, origin centered ([idir][f_idx][xyz])
 //
 //   // WIP
-//   frame_d    : D values (e.g. [2,4])
-//   frame_v    : frame vectors (for D = frame_d[idx])
-//   frame_t    : frame time (q-plane intersect to frustum frame for scale D)
+//   frame_t    : frame time (frame edge in frustum order) (source, dest)
+//   frame_updated : 1 source/dest frame_t updated
 // }
+//
+// So, here's what I think should happen:
+//
+// frustum_t[k] frustum_t[k+1] both in (0,1), wndow closed
+// frame_updated 1 -> look at frame_t to see if window needs updating
 //
 function frustum3d_intersection(q, ds) {
   ds = ((typeof ds === "undefined") ? 1 : ds);
@@ -347,11 +351,11 @@ function frustum3d_intersection(q, ds) {
       let vv = cross3(v_cur, v_nxt);
       if (njs.dot(vv, q) >= 0) { part_count++; }
 
-      console.log("## f_idx:", f_idx, "v_cur:", v_cur, "v_nxt:", v_nxt, "vv:", vv, "vv.q:", njs.dot(vv,q), "(part_count now", part_count, ")");
+      //console.log("## f_idx:", f_idx, "v_cur:", v_cur, "v_nxt:", v_nxt, "vv:", vv, "vv.q:", njs.dot(vv,q), "(part_count now", part_count, ")");
 
     }
 
-    console.log("## part_count:", part_count, "(/", _n, ")");
+    //console.log("## part_count:", part_count, "(/", _n, ")");
 
     if (part_count == _n) { frustum_idir = idir; }
 
@@ -360,6 +364,44 @@ function frustum3d_intersection(q, ds) {
 
   }
 
+  let frame_d = -1;
+  let frame_sd_t = [ [-1,-1], [-1,-1], [-1,-1], [-1,-1] ];
+  let frame_sd_updated = [ [0,0], [0,0], [0,0], [0,0] ];
+  let frame_sd_side = [ 0,0,0,0 ];
+  if (frustum_idir>=0) {
+
+    let idir = frustum_idir;
+    let _n = frustum_v[idir].length;
+
+    let Nq = njs.mul( 1 / njs.norm2(q), q );
+
+
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v_cur = frustum_v[idir][f_idx];
+      let v_nxt = frustum_v[idir][(f_idx+1)%_n];
+      let vv = njs.sub(v_nxt, v_cur);
+
+      let t1 = t_plane_line( Nq, q, v_cur, vv );
+
+      if ((t1 < 0) || (t1 > 1)) { continue; }
+
+      frame_sd_side[f_idx] = plane_f(v_cur, Nq, q);
+
+      if (plane_f(v_cur, Nq, q) > 0) {
+        frame_sd_t[f_idx][0] = t1;
+        frame_sd_updated[f_idx][0] = 1;
+      }
+      else {
+        frame_sd_t[f_idx][1] = t1;
+        frame_sd_updated[f_idx][1] = 1;
+      }
+
+    }
+
+  }
+
+
+  /*
   let frame_d = [ 2, 4];
   let frame_t = [ [ 0,0,0,0 ], [0,0,0,0] ];
   let frame_v = [ [], [] ];
@@ -399,6 +441,7 @@ function frustum3d_intersection(q, ds) {
     }
 
   }
+  */
 
 
   return {
@@ -408,9 +451,14 @@ function frustum3d_intersection(q, ds) {
     "frustum_v": frustum_v,
 
     "frustum_idir": frustum_idir,
-    "frame_v": frame_v,
-    "frame_d": frame_d,
-    "frame_t" : frame_t
+
+    "frame_t" : frame_sd_t,
+    "frame_updated": frame_sd_updated
+    //"frame_side": frame_sd_side
+
+    //"frame_v": frame_v,
+    //"frame_d": frame_d,
+    //"frame_t" : frame_t
   };
 
 }
@@ -479,6 +527,11 @@ function investigate_q_point() {
   let q;
   q =  [ 0.4608165114850644, 0.21948347420131942, 0.24588673712113795 ];
   q =  [ 0.99, 0.01, 0.97 ];
+  q =  [ 0.99, 0.01, 0.67 ];
+  q =  [ 0.99, 0.81, 0.67 ];
+  q =  [ 0.99, -0.81, 0.67 ];
+  q =  [ 0.95, 0.01, 0.02 ];
+  q =  [ 0.95, 0.11, 0.12 ];
 
   //console.log("#", q);
 
@@ -490,9 +543,8 @@ function investigate_q_point() {
 
   comment_stringify(res);
 
-  let __a = __analyze(res, q);
-
-  console.log("#a:", __a);
+  //let __a = __analyze(res, q);
+  //console.log("#a:", __a);
 
   return;
 
