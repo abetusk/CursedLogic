@@ -227,6 +227,337 @@ function lune_points( a, b, seg, connect ) {
   return p;
 }
 
+
+// 3D vector to idir
+//
+function v2idir(v) {
+  let max_xyz = 0;
+  let max_val = v[0];
+  for (let xyz=0; xyz<3; xyz++) {
+    if (Math.abs(v[xyz]) > max_val) {
+      max_xyz = xyz;
+      max_val = Math.abs(v[xyz]);
+    }
+  }
+
+  if (v[max_xyz] < 0) { return (2*max_xyz)+1; }
+  return 2*max_xyz;
+}
+
+// (3D) angle between p and q vectors
+//
+function v3theta(p,q) {
+  let s = njs.norm2( cross3(p,q) );
+  let c = njs.dot(p,q);
+  return Math.atan2(s,c);
+}
+
+// plane equation:
+//
+// P(u) = N_p \dot (u - p)
+//
+function plane_f(u, Np, p) {
+  return njs.dot( Np, njs.sub(u, p) );
+}
+
+// Np here is 4 vector plane, where first
+// three elements are normal, fourth is distance
+// to origin.
+//
+// Return plane equation, using derived point on
+// plane from reduced representation.
+//
+// Np = [nx, ny, nz, nw]
+//
+// P(u) = [nx,ny,nz] \dot (u - [ nw*nx, nw*ny, nw*nz ] )
+//
+function _Pf(u, Np) {
+  let Pp = [
+    Np[3]*Np[0],
+    Np[3]*Np[1],
+    Np[3]*Np[2]
+  ];
+
+  let _u = [ u[0], u[1], u[2] ];
+  let _Np = [ Np[0], Np[1], Np[2] ];
+
+  return plane_f(_u, _Np, Pp);
+}
+
+// return "time" value of line to plane intersection
+// line(t) = v0 + t v
+// plane(u) = Np . ( u - p )
+//
+// -> Np . ( v0 + t v - p ) = 0
+// -> t = ( (Np . p) - (Np . v0) ) / (Np . v)
+//
+function t_plane_line(Np, p, v0, v) {
+  let _eps = 1/(1024*1024*1024);
+  let _d = njs.dot(Np,v);
+  if (Math.abs(_d) < _eps) { return NaN; }
+
+  let t = (njs.dot(Np,p) - njs.dot(Np,v0)) / _d;
+  return t;
+}
+
+// evaluate line
+//
+// V(t) = v0 + t v
+//
+function Vt( v0, v, t ) {
+  return njs.add(v0, njs.mul(t, v));
+}
+
+// 3d cross product.
+//
+function cross3(p,q) {
+  let c0 = ((p[1]*q[2]) - (p[2]*q[1])),
+      c1 = ((p[2]*q[0]) - (p[0]*q[2])),
+      c2 = ((p[0]*q[1]) - (p[1]*q[0]));
+
+  return [c0,c1,c2];
+}
+
+// Three points to plane equation,
+// returns 4x1 vector,
+// where first three elemenst are normal,
+// last is distance to plane from origin.
+//
+function p3toP(p0, p1, p2) {
+  let _eps = 1/(1024*1024*1024);
+
+  let p10 = njs.sub(p1,p0);
+  let p20 = njs.sub(p2,p0);
+
+  let Np = cross3(p10,p20);
+
+  let Pk = -njs.dot(Np, p0);
+
+  return [ Np[0], Np[1], Np[2], Pk ]
+}
+
+
+// p0 : point on plane
+// u  : normal to plane
+// ds : frustum scaling factor (default 1)
+//
+// returns:
+//
+// { 
+//   idir       : if q-plane fully intersects the frustum vectors, holds idir that this happens
+//                -1 if none found
+//   idir_t     : four vector of time values (positive) that the intersection happens
+//                default if idir < 0
+//
+//   frustum_idir : frustum q-point sits in
+//   frustum_t    : 'time' values of q-plane intersection to each frustum vector
+//   frustum_v    : 3d vectors of frustum vectors, origin centered ([idir][f_idx][xyz])
+//   
+//   // WIP
+//   frame_t    : frame time (frame edge in frustum order) (source, dest)
+//   frame_updated : 1 source/dest frame_t updated
+// }
+//
+// So, here's what I think should happen:
+//
+// frustum_t[k] frustum_t[k+1] both in (0,1), wndow closed
+// frame_updated 1 -> look at frame_t to see if window needs updating
+//
+function frustum3d_intersection(p_world, q_world, ds) {
+  ds = ((typeof ds === "undefined") ? 1 : ds);
+
+  let q = njs.sub(q_world, p_world);
+
+  let s3 = 1/Math.sqrt(3);
+  let s3ds = s3*ds;
+
+  let L = ds;
+  let _eps = (1.0 / (1024*1024*1024));
+  let oppo = [1,0, 3,2, 5,4];
+
+  let _res_t = [
+    [-1,-1, 0, 0, 0, 0 ],
+    [-1,-1, 0, 0, 0, 0 ],
+    [ 0, 0,-1,-1, 0, 0 ],
+    [ 0, 0,-1,-1, 0, 0 ],
+    [ 0, 0, 0, 0,-1,-1 ],
+    [ 0, 0, 0, 0,-1,-1 ]
+  ];
+
+  let _frustum_t = [
+    [ 0, 0, 0, 0 ],
+    [ 0, 0, 0, 0 ],
+    [ 0, 0, 0, 0 ],
+    [ 0, 0, 0, 0 ],
+    [ 0, 0, 0, 0 ],
+    [ 0, 0, 0, 0 ]
+  ];
+
+  let v_idir = [
+    [1,0,0], [-1,0,0],
+    [0,1,0], [0,-1,0],
+    [0,0,1], [0,0,-1]
+  ];
+
+  // idir:
+  // 0 : +x, 1 : -x
+  // 2 : +y, 3 : -y
+  // 4 : +z, 5 : -z
+  //
+  // ccw order
+  //
+  let frustum_v = [
+    [ [ L, L, L ], [ L,-L, L ], [ L,-L,-L ], [ L, L,-L ] ],
+    [ [-L, L, L ], [-L, L,-L ], [-L,-L,-L ], [-L,-L, L ] ],
+
+    [ [ L, L, L ], [ L, L,-L ], [-L, L,-L ], [-L, L, L ] ],
+    [ [ L,-L, L ], [-L,-L, L ], [-L,-L,-L ], [ L,-L,-L ] ],
+
+    [ [ L, L, L ], [-L, L, L ], [-L,-L, L ], [ L,-L, L ] ],
+    [ [ L, L,-L ], [ L,-L,-L ], [-L,-L,-L ], [-L, L,-L ] ]
+  ];
+
+  let v_norm = njs.norm2( [L,L,L] );
+
+  let qn = njs.norm2(q);
+  let q2 = njs.norm2Squared(q);
+  if (q2 < _eps) { return; }
+
+  let found_idir = -1;
+
+  let n_q = njs.mul(1/qn, q);
+
+  // res_t calculation
+  // simple case of where each frustum vector intersects the q-plane
+  //
+  // n, normal to plane: q / |q|
+  // plane(u) = n . (u - q)
+  // v(t) = t . v_k  (point on frustum vector, $t \in \mathbb{R}$ parameter)
+  // => n . ( t . v_k - q ) = 0
+  // => t = ( q . n ) / (n . v _k)
+  //      = ( q . (q / |q|) ) / ( (q / |q|) . v_k )
+  //      = |q|^2 / (q . v_k)
+  //  
+  for (idir=0; idir<6; idir++) {
+    let fv_count = 0;
+    let fv_n = frustum_v[idir].length;
+
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v = frustum_v[idir][f_idx];
+
+      let qv = njs.dot(q,v);
+      if (Math.abs(qv) < _eps) { continue; }
+
+      let t = q2 / qv;
+      _frustum_t[idir][f_idx] = t;
+      if (t < 0) { continue; }
+      fv_count++;
+    }
+
+    if (fv_count < fv_n) { continue; }
+
+    // we've found a positive time intersection for each of the
+    // four frustum vectors to the q-plane.
+    // Remember the idir we've found it in
+
+    found_idir = idir;
+
+    // now fill out res_t with actual time values for the intersection
+    //
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v = frustum_v[idir][f_idx];
+
+      for (let pn=-1; pn<2; pn+=2) {
+        let v_nei = frustum_v[idir][(f_idx+pn+fv_n)%fv_n];
+        let win_edge = njs.sub(v_nei, v)
+
+        // plane(u) = n . (u - q)
+        // w(t) = w_0 + t w_v
+        // => n . ( w_0 + t w_v - q ) = 0
+        // => t = [ (n . q) - (n . w_0) ] / (n . w_v)
+        //      = [ ((q / |q|) . q) - ((q / |q|) . w_0) ] / ((q / |q|) . w_v)
+        //      = [ |q|^2 - (q . w_0) ] / (q . w_v)
+
+        let _d = njs.dot(q, v_nei);
+        if (Math.abs(_d) < _eps) { continue; }
+
+        let t_w = ( q2 - njs.dot(q,v) ) / _d;
+
+        let edge_idir = v2idir(win_edge);
+
+        if (njs.dot(n_q, njs.sub(v, q)) < 0) {
+          edge_idir = oppo[edge_idir];
+        }
+
+        _res_t[idir][edge_idir] = t_w;
+
+      }
+
+    }
+
+  }
+
+  let frustum_idir=-1;
+  for (idir = 0; idir < 6; idir++) {
+    let part_count = 0;
+    let _n = frustum_v[idir].length;
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v_cur = frustum_v[idir][f_idx];
+      let v_nxt = frustum_v[idir][(f_idx+1)%_n];
+      let vv = cross3(v_cur, v_nxt);
+      if (njs.dot(vv, q) >= 0) { part_count++; }
+    }
+    if (part_count == _n) { frustum_idir = idir; }
+  }
+
+  let frame_d = -1;
+  let frame_sd_t = [ [-1,-1], [-1,-1], [-1,-1], [-1,-1] ];
+  let frame_sd_updated = [ [0,0], [0,0], [0,0], [0,0] ];
+  let frame_sd_side = [ 0,0,0,0 ];
+  if (frustum_idir>=0) {
+    let idir = frustum_idir;
+    let _n = frustum_v[idir].length;
+    let Nq = njs.mul( 1 / njs.norm2(q), q );
+    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
+      let v_cur = frustum_v[idir][f_idx];
+      let v_nxt = frustum_v[idir][(f_idx+1)%_n];
+      let vv = njs.sub(v_nxt, v_cur);
+
+      let t1 = t_plane_line( Nq, q, v_cur, vv );
+
+      if ((t1 < 0) || (t1 > 1)) { continue; }
+
+      frame_sd_side[f_idx] = plane_f(v_cur, Nq, q);
+
+      if (plane_f(v_cur, Nq, q) > 0) {
+        frame_sd_t[f_idx][0] = t1;
+        frame_sd_updated[f_idx][0] = 1;
+      }
+      else {
+        frame_sd_t[f_idx][1] = t1;
+        frame_sd_updated[f_idx][1] = 1;
+      }
+    }
+  }
+
+  return {
+    "idir": found_idir,
+    "idir_t": _res_t,
+    "frustum_t": _frustum_t,
+    "frustum_v": frustum_v,
+    "frustum_idir": frustum_idir,
+    "frame_t" : frame_sd_t,
+    "frame_updated": frame_sd_updated
+  };
+
+}
+
+
+
+//---
+//---
+//---
+
 function check_cmp(res, edge) {
   let resE = [];
   let n = res.P.length;
@@ -716,8 +1047,435 @@ function alloc_info_3d(n, B, pnts) {
   return info;
 }
 
-
 // WIP!!!
+//
+function lune_network_3d_shrinking_fence(n, B, _point) {
+  _point = ((typeof _point === "undefined") ? [] : _point);
+
+  let _eps = 1 / (1024*1024*1024);
+
+  let info = {
+    "dim": 3,
+    "start": [0,0,0],
+    "size": [1,1,1],
+    "point_grid_bp": [],
+    "grid_cell_size": [-1,-1,-1],
+    "bbox": [[0,0,0], [1,1,1]],
+    "grid": [],
+    "P": [],
+    "E": []
+  };
+
+  let s3 = Math.cbrt(3)/2;
+
+  let v_idir = [
+    [1,0,0], [-1,0,0],
+    [0,1,0], [0,-1,0],
+    [0,0,1], [0,0,-1]
+  ];
+
+  // 0 : +x, 1 : -x
+  // 2 : +y, 3 : -y
+  // 4 : +z, 5 : -z
+  //
+  let frustum_v = [
+    [ [ s3, s3, s3 ], [ s3,-s3, s3 ], [ s3,-s3,-s3 ], [ s3, s3,-s3 ] ],
+    [ [-s3, s3, s3 ], [-s3, s3,-s3 ], [-s3,-s3,-s3 ], [-s3,-s3, s3 ] ],
+
+    [ [ s3, s3, s3 ], [ s3, s3,-s3 ], [-s3, s3,-s3 ], [-s3, s3, s3 ] ],
+    [ [ s3,-s3, s3 ], [-s3,-s3, s3 ], [-s3,-s3,-s3 ], [ s3,-s3,-s3 ] ],
+
+    [ [ s3, s3, s3 ], [-s3, s3, s3 ], [-s3,-s3, s3 ], [ s3,-s3, s3 ] ],
+    [ [ s3, s3,-s3 ], [ s3,-s3,-s3 ], [-s3,-s3,-s3 ], [-s3, s3,-s3 ] ]
+
+  ];
+
+
+  //DEBUG
+  //DEBUG
+  let debug_frustum = false;
+  if (debug_frustum) {
+    for (let idir=0; idir<frustum_v.length; idir++) {
+      let fr = frustum_v[idir];
+      for (let v_idx=0; v_idx<fr.length; v_idx++) {
+        console.log(fr[v_idx][0],fr[v_idx][1],fr[v_idx][2]);
+      }
+      console.log(fr[0][0],fr[0][1],fr[0][2]);
+      console.log("\n");
+    }
+  }
+  //DEBUG
+  //DEBUG
+
+  let grid_s = Math.cbrt(n);
+  let grid_n = Math.ceil(grid_s);
+
+  let ds = 1 / grid_n;
+
+  info.grid_cell_size[0] = ds;
+  info.grid_cell_size[1] = ds;
+  info.grid_cell_size[2] = ds;
+  info.grid_n = grid_n;
+  info.grid_s = grid_s;
+
+  // init grid
+  //
+  for (let i=0; i<grid_n; i++) {
+    info.grid.push([]);
+    for (let j=0; j<grid_n; j++) {
+      info.grid[i].push([]);
+      for (let k=0; k<grid_n; k++) {
+        info.grid[i][j].push([]);
+      }
+    }
+  }
+
+  let grid_size  = [ 1, 1, 1 ];
+  let grid_start = [ 0,0, 0 ];
+  let grid_cell_size = [ ds, ds, ds ];
+
+  info.start = grid_start;
+  info.size = grid_size;
+
+  // initialize points, creating random ones if ncessary
+  //
+  for (let i=0; i<n; i++) {
+    if (i < _point.length) {
+      info.P.push(_point[i]);
+    }
+    else {
+      let pnt = [
+        Math.random()*grid_size[0] + grid_start[0],
+        Math.random()*grid_size[1] + grid_start[1],
+        Math.random()*grid_size[2] + grid_start[2]
+      ];
+      info.P.push(pnt);
+    }
+    info.point_grid_bp.push([-1,-1,-1]);
+    //info.edge.push([]);
+  }
+
+  let P = info.P;
+  let E = [];
+
+  // setup lll grid binning
+  //
+  for (let i=0; i<n; i++) {
+    let ix = Math.floor(info.P[i][0]*grid_n);
+    let iy = Math.floor(info.P[i][1]*grid_n);
+    let iz = Math.floor(info.P[i][2]*grid_n);
+    info.grid[iz][iy][ix].push(i);
+    info.point_grid_bp[i] = [ix,iy,iz];
+  }
+
+  //DEBUG
+  //DEBUG
+  //print grid
+  let _debug_grid = false;
+  if (_debug_grid) {
+    console.log("#grid (grid_n:", grid_n, "ds:", ds,  ")");
+    for (let iz=0; iz<info.grid.length; iz++) {
+      for (let iy=0; iy<info.grid[iz].length; iy++) {
+        for (let ix=0; ix<info.grid[iz][iy].length; ix++) {
+          console.log( ix*ds, iy*ds, iz*ds );
+          console.log( (ix+1)*ds, iy*ds, iz*ds );
+          console.log("\n");
+
+          console.log( ix*ds, iy*ds, iz*ds );
+          console.log( ix*ds, (iy+1)*ds, iz*ds );
+          console.log("\n");
+
+          console.log( ix*ds, iy*ds, iz*ds );
+          console.log( ix*ds, iy*ds, (iz+1)*ds );
+          console.log("\n");
+
+        }
+      }
+    }
+  }
+  //DEBUG
+  //DEBUG
+
+  let _debug = false;
+
+  for (let p_idx = 0; p_idx < info.P.length; p_idx++) {
+
+    //FAILURE DEBUGGING
+    //if ((p_idx == 14) || (p_idx==15)){ _debug = true; }
+    //else { _debug = false; }
+
+    //let p_idx = 0;
+    let p = info.P[p_idx];
+
+    let Wp = [ p[0]*grid_n, p[1]*grid_n, p[2]*grid_n ];
+    let ip = Wp.map( Math.floor );
+
+    let p_fence = [
+      grid_n-ip[0], ip[0],
+      grid_n-ip[1], ip[1],
+      grid_n-ip[2], ip[2]
+    ];
+
+    let p_near_idir = 1;
+    let l0 = Wp[0] - ip[0];
+    for (let xyz=0; xyz<3; xyz++) {
+      let _l = Wp[xyz] - ip[xyz];
+      if (_l < l0) {
+        p_near_idir = 2*xyz + 1;
+        l0 = _l;
+      }
+      _l = 1 - (Wp[xyz] - ip[xyz]);
+      if (_l < l0) {
+        p_near_idir = 2*xyz + 0;
+        l0 = _l;
+      }
+    }
+    l0 *= ds;
+    let t0 = l0*Math.cbrt(3);
+
+    if (_debug) {
+      console.log("# P[", p_idx, "]:", p, "ip:", ip, "Wp:", Wp, "l0:", l0, "(near_idir:", p_near_idir, ")");
+
+      console.log(p[0], p[1], p[2]);
+      console.log(p[0] + l0*v_idir[p_near_idir][0], p[1] + l0*v_idir[p_near_idir][1], p[2] + l0*v_idir[p_near_idir][2]);
+      console.log("\n");
+    }
+
+    let p_f_v = [];
+    for (let idx=0; idx<frustum_v.length; idx++) {
+      p_f_v.push([]);
+      for (let ii=0; ii<frustum_v[idx].length; ii++) {
+        //p_f_v[idx].push( njs.add( njs.mul(ds, frustum_v[idx][ii]), p ) );
+        p_f_v[idx].push( njs.mul(ds, frustum_v[idx][ii]) );
+      }
+    }
+
+    if (_debug) {
+      //DEBUG
+      //DEBUG
+      console.log("# local p[", p_idx, "], fence:", p_fence, " frustum:");
+      for (let idx=0; idx<p_f_v.length; idx++) {
+        for (let ii=0; ii<p_f_v[idx].length; ii++) {
+          console.log(p[0], p[1], p[2]);
+          //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
+          let _vt = njs.add(p, p_f_v[idx][ii]);
+          console.log( _vt[0], _vt[1], _vt[2] );
+          console.log("\n");
+
+          console.log(p[0], p[1], p[2]);
+          //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
+          _vt = njs.add(p, njs.mul(grid_n, p_f_v[idx][ii]));
+          console.log( _vt[0], _vt[1], _vt[2] );
+          console.log("\n");
+        }
+      }
+
+      console.log("# l0 test");
+      for (let ii=0; ii<4; ii++) {
+        console.log(p[0], p[1], p[2]);
+        let _vt = njs.add( p, njs.mul( t0, frustum_v[p_near_idir][ii] ) );
+        console.log(_vt[0], _vt[1], _vt[2]);
+        console.log("\n");
+      }
+      //DEBUG
+      //DEBUG
+    }
+
+    //  points in fence (index)
+    //
+    let pif_list = [];
+
+    for (let ir = 0; ir < grid_n; ir++) {
+
+      if (_debug) {
+        console.log("# ir:", ir, "fence:", p_fence.join(","));
+      }
+
+
+      let fenced_in = true;
+      for (let ii=0; ii<p_fence.length; ii++) {
+        if (p_fence[ii] >= ir) { fenced_in = false; break; }
+      }
+      if (fenced_in) {
+
+        if (_debug) {
+          console.log("#fenced in (fence:", p_fence, "), breaking");
+        }
+
+        break;
+      }
+
+      let sweep = grid_sweep_perim_3d(info, info.P[p_idx], ir);
+
+      let sweep_q_idx = [];
+      for (let path_idx = 0; path_idx < sweep.path.length; path_idx++) {
+        let ixyz = sweep.path[path_idx];
+        let grid_bin = info.grid[ixyz[2]][ixyz[1]][ixyz[0]];
+        for (let bin_idx = 0; bin_idx < grid_bin.length; bin_idx++) {
+          sweep_q_idx.push( grid_bin[bin_idx] );
+        }
+
+        //DEBUG
+        if (_debug) {
+          console.log("# grid_bin", ixyz, ":", grid_bin.join(","));
+        }
+        //DEBUG
+
+      }
+
+      for (let nei_idx=0; nei_idx < sweep_q_idx.length; nei_idx++) {
+        let q_idx = sweep_q_idx[nei_idx];
+        if (q_idx == p_idx) { continue; }
+
+        if (_debug) {
+          console.log("# adding q_idx:", q_idx, "to pif_list (", pif_list.join(","), ") (p_idx:", p_idx, ")");
+        }
+
+        pif_list.push( q_idx );
+
+        let q = info.P[q_idx];
+
+        let dqp = njs.sub(q,p);
+        let qp2 = njs.norm2Squared(dqp);
+
+        let t_frustum = [];
+        for (let idir=0; idir<p_f_v.length; idir++) {
+          t_frustum.push([]);
+
+          let pos_count = 0,
+              min_tI = grid_n,
+              max_tI = -1;
+
+          let _debug_vidx = -1, _debug_t = -1;
+
+          for (let ii=0; ii<p_f_v[idir].length; ii++) {
+
+            let v = p_f_v[idir][ii];
+
+            let qp_v = njs.dot(dqp,v);
+
+            if ( Math.abs(qp_v) < _eps) {
+
+              if (_debug) {
+                console.log("#skipping p_frustum[", idir, "][", ii, "]: ( (q-p).v =", qp_v, ")");
+              }
+
+              continue;
+            }
+
+            let t = qp2 / qp_v;
+            if (t < 0) { continue; }
+
+            let tI = Math.floor(t - t0);
+
+            if (_debug) {
+              console.log("##>> F[", idir, "][", ii, "] p:", p, "q:", q, "t:", t, "t0:", t0, "tI:", tI);
+            }
+
+            pos_count++;
+            if (tI < min_tI) {
+              min_tI = tI;
+            }
+
+            if (tI > max_tI) {
+              max_tI = tI;
+              _debug_vidx = ii;
+              _debug_t = t;
+            }
+
+          }
+
+          if (pos_count == 4) {
+            //if (p_fence[idir] > min_tI) {
+              //p_fence[idir] = min_tI;
+
+            if (p_fence[idir] > max_tI) {
+              p_fence[idir] = max_tI;
+
+              //DEBUG
+              //DEBUG
+              if (_debug) {
+                if (_debug_vidx >= 0) {
+                  console.log(q[0], q[1], q[2]);
+                  let _v = njs.add(p, njs.mul(_debug_t, p_f_v[idir][_debug_vidx])) ;
+                  console.log( _v[0], _v[1], _v[2] );
+                  console.log("\n");
+                }
+
+                console.log("## UPDATING FENCE (p_idx:", p_idx, "ir:", ir, ")>> pos_count:", pos_count,
+                  "idir:", idir, "fence now:", p_fence, "from q[", q_idx, "]:", q);
+              }
+              //DEBUG
+              //DEBUG
+
+            }
+          }
+
+        }
+
+      } // END for nei_idx in sweep
+
+    } // END for ir
+
+
+    // naive relative neighborhood graph detection by considering
+    // all points in fence
+    //
+
+    if (_debug) {
+      console.log("# naive rng for p_idx:", p_idx, "on pif_list:", pif_list.join(","));
+    }
+
+    for (let i = 0; i < pif_list.length; i++) {
+      let q_idx = pif_list[i];
+
+      let _found = true;
+      for (let j = 0; j < pif_list.length; j++) {
+        if (i==j) { continue; }
+
+        let u_idx = pif_list[j];
+
+        if (_debug) {
+          console.log("# u:", u_idx, "in lune(", p_idx, q_idx,")?", in_lune(P[p_idx], P[q_idx], P[u_idx]));
+        }
+
+        if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
+
+          if (_debug) {
+            console.log("# u_idx:", u_idx, "in lune of (", p_idx, ",", q_idx, ")");
+          }
+
+          _found = false;
+          break;
+        }
+      }
+      if (_found) {
+
+        if (_debug) {
+          console.log("# adding (", p_idx, q_idx, ")");
+        }
+
+        E.push([p_idx, q_idx]);
+
+      }
+      else {
+        if (_debug) {
+          console.log("# skipping (", p_idx, q_idx, ")");
+        }
+      }
+
+    }
+
+  }
+
+  info.E = E;
+
+  return { "P": P, "E": E, "info": info };
+}
+
+
+
+
 //
 function gen_instance_3d_fence(n, B, _point) {
   _point = ((typeof _point === "undefined") ? [] : _point);
