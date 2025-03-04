@@ -1054,6 +1054,8 @@ function alloc_info_3d(n, B, pnts) {
 function lune_network_3d_shrinking_fence(n, B, _point) {
   _point = ((typeof _point === "undefined") ? [] : _point);
 
+  let idir_descr = ["+x", "-x", "+y", "-y", "+z", "-z" ];
+
   let _eps = 1 / (1024*1024*1024);
 
   let info = {
@@ -1070,12 +1072,18 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
 
   let s3 = Math.sqrt(3)/2;
 
+  // idir to vector
+  //
   let v_idir = [
     [1,0,0], [-1,0,0],
     [0,1,0], [0,-1,0],
     [0,0,1], [0,0,-1]
   ];
 
+  let _debug = true;
+
+  // normaalized frustum vectors for each idir
+  //
   // 0 : +x, 1 : -x
   // 2 : +y, 3 : -y
   // 4 : +z, 5 : -z
@@ -1091,6 +1099,7 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
     [ [ s3, s3,-s3 ], [ s3,-s3,-s3 ], [-s3,-s3,-s3 ], [-s3, s3,-s3 ] ]
 
   ];
+
 
 
   //DEBUG
@@ -1109,7 +1118,12 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
   //DEBUG
   //DEBUG
 
+  // grid cell size
+  //
   let grid_s = Math.cbrt(n);
+
+  // number of grid cells
+  //
   let grid_n = Math.ceil(grid_s);
 
   let ds = 1 / grid_n;
@@ -1139,6 +1153,13 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
   info.start = grid_start;
   info.size = grid_size;
 
+
+  if (_debug) {
+    console.log("#s3:", s3, "ds:", ds, "grid_n:", grid_n);
+  }
+
+
+
   // initialize points, creating random ones if ncessary
   //
   for (let i=0; i<n; i++) {
@@ -1160,7 +1181,7 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
   let P = info.P;
   let E = [];
 
-  // setup lll grid binning
+  // setup linked list grid binning
   //
   for (let i=0; i<n; i++) {
     let ix = Math.floor(info.P[i][0]*grid_n);
@@ -1198,7 +1219,6 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
   //DEBUG
   //DEBUG
 
-  let _debug = false;
 
   for (let p_idx = 0; p_idx < info.P.length; p_idx++) {
 
@@ -1206,16 +1226,38 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
     //if ((p_idx == 14) || (p_idx==15)){ _debug = true; }
     //else { _debug = false; }
 
-    //let p_idx = 0;
     let p = info.P[p_idx];
 
     let Wp = [ p[0]*grid_n, p[1]*grid_n, p[2]*grid_n ];
     let ip = Wp.map( Math.floor );
 
+    // idir coarse fence bounds
+    //
     let p_fence = [
       grid_n-ip[0], ip[0],
       grid_n-ip[1], ip[1],
       grid_n-ip[2], ip[2]
+    ];
+
+    // shrinking window bounding box for each
+    // idir
+    //
+    // [ [min], [max] ],
+    // ...
+    //
+    // bounding box is for window on face of idir,
+    // so idir direction shouldn't be touched and
+    // set with values to allow for easy checks below
+    //
+    let p_window = [
+      [ [ 1,-1,-1], [ 0,-1,-1] ],
+      [ [ 1,-1,-1], [ 0,-1,-1] ],
+
+      [ [-1, 1,-1], [-1, 0,-1] ],
+      [ [-1, 1,-1], [-1, 0,-1] ],
+
+      [ [-1,-1, 1], [-1,-1, 0] ],
+      [ [-1,-1, 1], [-1,-1, 0] ]
     ];
 
     let p_near_idir = 1;
@@ -1236,7 +1278,13 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
     let t0 = l0*Math.sqrt(3);
 
     if (_debug) {
-      console.log("# P[", p_idx, "]:", p, "ip:", ip, "Wp:", Wp, "l0:", l0, "(near_idir:", p_near_idir, ")");
+      console.log("### INIT: P[", p_idx, "]:", p, "l0:", l0, "near_idir:", p_near_idir, "(ip:", ip, ")");
+      console.log("# init Wp:", JSON.stringify(Wp), "ip:", JSON.stringify(ip), "(", grid_n, ",", grid_n, ",", grid_n, ")");
+      console.log("# init p_fence :", JSON.stringify(p_fence));
+      //console.log("# init p_window:", JSON.stringify(p_window));
+      for (let _ii=0; _ii<p_window.length; _ii++) {
+        console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
+      }
 
       console.log(p[0], p[1], p[2]);
       console.log(p[0] + l0*v_idir[p_near_idir][0], p[1] + l0*v_idir[p_near_idir][1], p[2] + l0*v_idir[p_near_idir][2]);
@@ -1252,6 +1300,7 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
       }
     }
 
+    /*
     if (_debug) {
       //DEBUG
       //DEBUG
@@ -1282,6 +1331,7 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
       //DEBUG
       //DEBUG
     }
+    */
 
     //  points in fence (index)
     //
@@ -1290,13 +1340,19 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
     for (let ir = 0; ir < grid_n; ir++) {
 
       if (_debug) {
-        console.log("# ir:", ir, "fence:", p_fence.join(","));
+        console.log("\n# ir:", ir, "fence:", p_fence.join(","));
+        for (let _ii=0; _ii<p_window.length; _ii++) {
+          console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
+        }
       }
 
 
+      //---
+      // coarse fence
+      //
       let fenced_in = true;
       for (let ii=0; ii<p_fence.length; ii++) {
-        if (p_fence[ii] >= ir) { fenced_in = false; break; }
+        if (ir <= p_fence[ii]) { fenced_in = false; break; }
       }
       if (fenced_in) {
 
@@ -1306,9 +1362,46 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
 
         break;
       }
+      //
+      //---
+
+      //---
+      // shrinking window bounds check
+      //
+      fenced_in = true;
+      for (let idir=0; idir<p_window.length; idir++) {
+        let _m = p_window[idir][0];
+        let _M = p_window[idir][1];
+
+        for (let xyz=0; xyz<3; xyz++) {
+          if ( ((_m[xyz] == -1) || _M[xyz] == -1) ||
+               (_m[xyz] < _M[xyz]) ) {
+            fenced_in = false;
+            break;
+          }
+        }
+        if (!fenced_in) { break; }
+      }
+      //
+      //---
+
+      if (fenced_in) {
+
+        if (_debug) {
+          console.log("# fenced in (window):");
+          for (let _ii=0; _ii<p_window.length; _ii++) {
+            console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
+          }
+          console.log("# fenced in (window) break");
+        }
+
+        break;
+      }
 
       let sweep = grid_sweep_perim_3d(info, info.P[p_idx], ir);
 
+      // collect all q points in perimiter of current grid perimeter
+      //
       let sweep_q_idx = [];
       for (let path_idx = 0; path_idx < sweep.path.length; path_idx++) {
         let ixyz = sweep.path[path_idx];
@@ -1325,17 +1418,97 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
 
       }
 
+      // go through each, updating coarse fence and shrinking window
+      //
       for (let nei_idx=0; nei_idx < sweep_q_idx.length; nei_idx++) {
         let q_idx = sweep_q_idx[nei_idx];
         if (q_idx == p_idx) { continue; }
 
         if (_debug) {
           console.log("# adding q_idx:", q_idx, "to pif_list (", pif_list.join(","), ") (p_idx:", p_idx, ")");
+          for (let _ii=0; _ii<p_window.length; _ii++) {
+            console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
+          }
         }
 
         pif_list.push( q_idx );
 
         let q = info.P[q_idx];
+
+        let fi_info = frustum3d_intersection(p, q, ds);
+
+        if (_debug) {
+          console.log("# p[", p_idx,"]:", p, "q[", q_idx, "]:", q);
+          console.log("# frustum_idir:", fi_info.frustum_idir, "(", idir_descr[ fi_info.frustum_idir ], ")");
+          for (let idir=0; idir<6; idir++) {
+            console.log("#frustum_t[", idir, "]", JSON.stringify(fi_info.frustum_t[idir]));
+          }
+        }
+
+        // coarse fence updates
+        //
+        for (let idir=0; idir<6; idir++) {
+          let t_max = -1;
+          let f_count=0;
+          for (let i=0; i<fi_info.frustum_t[idir].length; i++) {
+            if (fi_info.frustum_t[idir][i] > 0) {
+              f_count++;
+              if (fi_info.frustum_t[idir][i] > t_max) {
+                t_max = fi_info.frustum_t[idir][i];
+              }
+            }
+          }
+          if (f_count == fi_info.frustum_t[idir].length) {
+            let ti_max = Math.ceil(t_max);
+            if (ti_max < p_fence[idir]) { p_fence[idir] = ti_max; }
+          }
+        }
+
+        // shrinking window updates
+        //
+        let _vn = fi_info.frame_t.length;
+        for (let v_idx=0; v_idx < _vn; v_idx++) {
+
+          let frame_idir = v2idir( njs.sub( fi_info.frustum_v[(v_idx+1)%_vn], fi_info.frustum_v[v_idx] ) );
+
+          let mM = [ fi_info.frame_t[v_idx][0], fi_info.frame_t[v_idx][1] ];
+          for (let iI=0; iI<2; iI++) {
+            if (fi_info.frame_updated[v_idx][iI]) {
+
+              if ((p_window[fi_info.frustum_idir][iI][frame_idir] < 0) ||
+                  (mM[iI] > p_window[fi_info.frustum_idir][iI][frame_idir])) {
+                p_window[fi_info.frustum_idir][iI][frame_idir] = mM[iI];
+
+                if (_debug) {
+                  console.log("#\n#{p_window_update} frustum_idir:", fi_info.frustum_idir, "v_idx:", v_idx, "mM:", mM, "iI:", iI, "frame_idir:", frame_idir);
+                  console.log("#   p_window[fr_idir:", fi_info.frustum_idir, "][iI:", iI, "][frame_idir:", frame_idir, "]:",
+                    p_window[fi_info.frustum_idir][iI][frame_idir]);
+                  console.log("#");
+
+                  //console.log("# p_window updated:");
+                  //for (let _ii=0; _ii<p_window.length; _ii++) {
+                  //  console.log("# p_window[", _ii, "]:", p_window[_ii])
+                  //}
+
+                }
+              }
+              else {
+
+                if (_debug) {
+                  console.log("# skipping p_window update (fr_idir:", fi_info.frustum_idir, "iI:", iI, "frame_idir:", frame_idir, "mM[", iI, "]:", mM[iI],
+                    "p_window[", fi_info.frustum_idir, "][", iI, "][", frame_idir, "]:", p_window[fi_info.frustum_idir][iI][frame_idir]);
+                }
+
+              }
+
+            }
+          }
+
+        }
+
+
+
+        /*
 
         let dqp = njs.sub(q,p);
         let qp2 = njs.norm2Squared(dqp);
@@ -1414,59 +1587,34 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
           }
 
         }
+        */
 
       } // END for nei_idx in sweep
 
     } // END for ir
 
 
+
+
+    //---
     // naive relative neighborhood graph detection by considering
-    // all points in fence
+    // all points in fence (pif_list)
     //
-
-    if (_debug) {
-      console.log("# naive rng for p_idx:", p_idx, "on pif_list:", pif_list.join(","));
-    }
-
     for (let i = 0; i < pif_list.length; i++) {
       let q_idx = pif_list[i];
-
       let _found = true;
       for (let j = 0; j < pif_list.length; j++) {
         if (i==j) { continue; }
-
         let u_idx = pif_list[j];
-
-        if (_debug) {
-          console.log("# u:", u_idx, "in lune(", p_idx, q_idx,")?", in_lune(P[p_idx], P[q_idx], P[u_idx]));
-        }
-
         if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
-
-          if (_debug) {
-            console.log("# u_idx:", u_idx, "in lune of (", p_idx, ",", q_idx, ")");
-          }
-
           _found = false;
           break;
         }
       }
-      if (_found) {
-
-        if (_debug) {
-          console.log("# adding (", p_idx, q_idx, ")");
-        }
-
-        E.push([p_idx, q_idx]);
-
-      }
-      else {
-        if (_debug) {
-          console.log("# skipping (", p_idx, q_idx, ")");
-        }
-      }
-
+      if (_found) { E.push([p_idx, q_idx]); }
     }
+    //
+    //---
 
   }
 
@@ -4135,6 +4283,55 @@ function main_test3d() {
   process.exit();
 }
 
+function main_test3d_sf() {
+
+  let Ntest = [
+    10,10,10,20,20,20,30,30,30,
+    50,50,
+    100,100,
+    200,200,
+    300,400,
+    500, 600,
+    700, 800,
+    900, 1000
+  ];
+
+  for (let n_idx=0; n_idx < Ntest.length; n_idx++) {
+    let N = Ntest[n_idx];
+    let _pnts = poisson_point(N, 3);
+
+
+    console.log("# fence start");
+
+    let info = lune_network_3d_shrinking_fence(N, [[0,0,0],[1,1,1]], _pnts);
+
+    console.log("# fence done");
+
+    console.log("# naive start");
+
+    let naive_res = naive_relnei_E(info.P);
+
+    console.log("# naive done");
+
+    console.log("## naive avg deg:", _avgAdeg(naive_res.A));
+
+    let _cmp_res = check_cmp(info, naive_res.A);
+
+    if (!_cmp_res) {
+      console.log("#check failed, points:");
+      print_point(info.P);
+      break;
+    }
+
+    console.log("#", N, "{", n_idx,"}", _cmp_res);
+
+  }
+
+  process.exit();
+
+}
+
+
 function create_A(info) {
   let n = info.P.length;
 
@@ -4225,10 +4422,33 @@ function main() {
 }
 
 
+function spotcheck() {
+  let N = 10;
+  let B = [[0,0,0], [1,1,1]];
+  let pnt = poisson_point(N, 3);
+  let info = lune_network_3d_shrinking_fence(N, B, pnt);
 
-main_test2d();
+  //for (let i=0; i<pnt.length; i++) { console.log(pnt[i][0], pnt[i][1], pnt[i][2]); }
+
+  for (let i=0; i<info.E.length; i++) {
+    let p = info.P[ info.E[i][0] ];
+    let q = info.P[ info.E[i][1] ];
+
+    console.log(p[0], p[1], p[2]);
+    console.log(q[0], q[1], q[2]);
+    console.log("\n\n");
+  }
+
+  //console.log(info);
+}
+
+spotcheck();
+process.exit();
+
+//main_test2d();
 //main();
 //main_test3d();
+main_test3d_sf();
 
 //fence_avg_deg_3d();
 //fence_dist_plot_3d();
