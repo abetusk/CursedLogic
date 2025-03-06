@@ -4442,14 +4442,35 @@ function spotcheck() {
   //console.log(info);
 }
 
-spotcheck();
-process.exit();
+function cli_main() {
 
-//main_test2d();
-//main();
-//main_test3d();
-main_test3d_sf();
+  spotcheck();
+  process.exit();
 
-//fence_avg_deg_3d();
-//fence_dist_plot_3d();
+  //main_test2d();
+  //main();
+  //main_test3d();
+  main_test3d_sf();
 
+  //fence_avg_deg_3d();
+  //fence_dist_plot_3d();
+
+}
+
+function export_f() {
+
+  exports.poisson_point = poisson_point;
+  exports.v2idir = v2idir;
+  exports.v3theta = v3theta;
+  exports.cross3 = cross3;
+  exports.frustum3d_intersection = frustum3d_intersection;
+  exports.naive_relnei_E = naive_relnei_E;
+  exports.lune_network_3d_shrinking_fence = lune_network_3d_shrinking_fence;
+
+
+
+}
+
+if      (typeof require === "undefined")  { export_f(); }
+else if (require.main === module)         { cli_main(); }
+else                                      { export_f(); }
