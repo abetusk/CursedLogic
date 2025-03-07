@@ -341,7 +341,8 @@ function p3toP(p0, p1, p2) {
 
 // p0 : point on plane
 // u  : normal to plane
-// ds : frustum scaling factor (default 1)
+// box_r: frustum scaling factor (default 1)
+//        radius of box (distance of side of frustum box to p)
 //
 // returns:
 //
@@ -365,15 +366,15 @@ function p3toP(p0, p1, p2) {
 // frustum_t[k] frustum_t[k+1] both in (0,1), wndow closed
 // frame_updated 1 -> look at frame_t to see if window needs updating
 //
-function frustum3d_intersection(p_world, q_world, ds) {
-  ds = ((typeof ds === "undefined") ? 1 : ds);
+function frustum3d_intersection(p_world, q_world, box_r) {
+  box_r = ((typeof box_r === "undefined") ? 1 : box_r);
 
   let q = njs.sub(q_world, p_world);
 
   let s3 = 1/Math.sqrt(3);
-  let s3ds = s3*ds;
+  let s3br = s3*box_r;
 
-  let L = ds;
+  let L = box_r;
   let _eps = (1.0 / (1024*1024*1024));
   let oppo = [1,0, 3,2, 5,4];
 
@@ -440,10 +441,13 @@ function frustum3d_intersection(p_world, q_world, ds) {
   //      = ( q . (q / |q|) ) / ( (q / |q|) . v_k )
   //      = |q|^2 / (q . v_k)
   //  
-  for (idir=0; idir<6; idir++) {
+  for (let idir=0; idir<6; idir++) {
     let fv_count = 0;
     let fv_n = frustum_v[idir].length;
 
+    // test to see if there are the four frustum vectors that
+    // have positive 'time' intersection to q-plane
+    //
     for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
       let v = frustum_v[idir][f_idx];
 
@@ -461,6 +465,7 @@ function frustum3d_intersection(p_world, q_world, ds) {
     // we've found a positive time intersection for each of the
     // four frustum vectors to the q-plane.
     // Remember the idir we've found it in
+    //
 
     found_idir = idir;
 
@@ -499,8 +504,16 @@ function frustum3d_intersection(p_world, q_world, ds) {
 
   }
 
+  // now calculate the 'time' component of intersection
+  // to the frame for the frustum the q point sits fully
+  // inside
+  //
+  // First calculate which frustum idir the q point sits in
+  // by seeing if q is comletely enclosed by four planes
+  // making up the frustum in this idir.
+  //
   let frustum_idir=-1;
-  for (idir = 0; idir < 6; idir++) {
+  for (let idir = 0; idir < 6; idir++) {
     let part_count = 0;
     let _n = frustum_v[idir].length;
     for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
@@ -512,6 +525,14 @@ function frustum3d_intersection(p_world, q_world, ds) {
     if (part_count == _n) { frustum_idir = idir; }
   }
 
+  // once the frustum idir of where q is sitting in is
+  // determined, find the times for the q-plane to each
+  // of the frustum edge frame intersections.
+  // `frame_sd_t` holds the source/dest times for the frame
+  // edge, where which source or destination is filled
+  // depends on which side the source of the frustum frame
+  // edge (v_cur) sits on the q-plane.
+  //
   let frame_d = -1;
   let frame_sd_t = [ [-1,-1], [-1,-1], [-1,-1], [-1,-1] ];
   let frame_sd_updated = [ [0,0], [0,0], [0,0], [0,0] ];
@@ -1339,6 +1360,10 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
 
     for (let ir = 0; ir < grid_n; ir++) {
 
+      // 'radius' of frustum box centered at p
+      //
+      let frustum_box_r = l0 + (ds*ir);
+
       if (_debug) {
         console.log("\n# ir:", ir, "fence:", p_fence.join(","));
         for (let _ii=0; _ii<p_window.length; _ii++) {
@@ -1435,7 +1460,8 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
 
         let q = info.P[q_idx];
 
-        let fi_info = frustum3d_intersection(p, q, ds);
+        //let fi_info = frustum3d_intersection(p, q, ds);
+        let fi_info = frustum3d_intersection(p, q, frustum_box_r);
 
         if (_debug) {
           console.log("# p[", p_idx,"]:", p, "q[", q_idx, "]:", q);
