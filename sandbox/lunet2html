@@ -1,0 +1,3 @@
+#!/bin/bash
+
+browserify lunenetwork.js  --standalone lunet > lunet.js
