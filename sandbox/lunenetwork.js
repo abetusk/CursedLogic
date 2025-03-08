@@ -4228,6 +4228,39 @@ function main_test3d_sf() {
 }
 
 
+function main_perf_test3d_sf() {
+
+  let Ntest = [
+    10,20,30,40, 50,
+    60,70,80,90,
+    100, 200, 300,400, 500,
+    600, 700, 800, 900,
+    1000, 2000,3000, 4000, 5000,
+    6000, 7000, 8000, 9000,
+    10000, 20000, 30000, 40000, 50000,
+    60000, 70000, 80000, 90000,
+    100000
+  ];
+
+  for (let n_idx=0; n_idx < Ntest.length; n_idx++) {
+    let N = Ntest[n_idx];
+    let _pnts = poisson_point(N, 3);
+
+    prof_s(prof_ctx, "tot");
+    let info = lune_network_3d_shrinking_fence(N, [[0,0,0],[1,1,1]], _pnts);
+    prof_e(prof_ctx, "tot");
+
+
+    console.log(N, prof_avg(prof_ctx, "tot"));
+
+    prof_reset(prof_ctx);
+  }
+
+  process.exit();
+
+}
+
+
 function create_A(info) {
   let n = info.P.length;
 
@@ -4346,7 +4379,9 @@ function cli_main() {
   //main_test2d();
   //main();
   //main_test3d();
-  main_test3d_sf();
+  //main_test3d_sf();
+
+  main_perf_test3d_sf();
 
   //fence_avg_deg_3d();
   //fence_dist_plot_3d();
