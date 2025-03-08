@@ -118,7 +118,6 @@
 
 var njs = require("./numeric.js");
 var srand = require("./seedrandom.js");
-
 var fs = require("fs");
 
 var _rnd = srand("lunenetwork");
@@ -184,6 +183,25 @@ function in_lune(pnt_a, pnt_b, tst_c) {
 function _lerp(v0, v1, t) {
   return v0 + ((v1-v0)*t)
 }
+
+// euler rotation or olinde rodrigues
+// https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
+//
+function rodrigues(v0, _vr, theta) {
+  let c = Math.cos(theta);
+  let s = Math.sin(theta);
+
+  let v_r = njs.mul( 1 / njs.norm2(_vr), _vr );
+
+  return njs.add(
+    njs.mul(c, v0),
+    njs.add(
+      njs.mul( s, cross3(v_r,v0)),
+      njs.mul( (1-c) * njs.dot(v_r, v0), v_r )
+    )
+  );
+}
+
 
 function lune_points( a, b, seg, connect ) {
   seg = ((typeof seg === "undefined") ? 8 : seg);
@@ -1072,7 +1090,15 @@ function alloc_info_3d(n, B, pnts) {
 
 // WIP!!!
 //
+
 function lune_network_3d_shrinking_fence(n, B, _point) {
+  let _iter = _lune_network_3d_shrinking_fence(n, B, _point);
+  let _res = _iter.next();
+  while (!_res.done) { _res = _iter.next(); }
+  return _res.value;
+}
+
+function* _lune_network_3d_shrinking_fence(n, B, _point) {
   _point = ((typeof _point === "undefined") ? [] : _point);
 
   let idir_descr = ["+x", "-x", "+y", "-y", "+z", "-z" ];
@@ -4492,8 +4518,7 @@ function export_f() {
   exports.frustum3d_intersection = frustum3d_intersection;
   exports.naive_relnei_E = naive_relnei_E;
   exports.lune_network_3d_shrinking_fence = lune_network_3d_shrinking_fence;
-
-
+  exports.rodrigues = rodrigues;
 
 }
 

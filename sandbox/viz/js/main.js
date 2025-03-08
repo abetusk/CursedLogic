@@ -11,342 +11,25 @@ import * as GeometryUtils from 'three/addons/utils/GeometryUtils.js';
 
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 
+var legend_anchor = [ -0.1, -0.1, -0.1 ],
+    legend_dxyz = [ 0.1, 0.1, 0.1 ];
 
 var _numeric = await import("./njs.mjs");
 var njs = _numeric.Numeric;
 
-//------
-//------
-//------
+var IDIR_COLOR = [
+  [ 1,0,0 ], [ 1,0,0 ],
+  [ 0,1,0 ], [ 0,1,0 ],
+  [ 0,0,1 ], [ 0,0,1 ]
+];
 
-// plane equation:
-//
-// P(u) = N_p \dot (u - p)
-//
-function plane_f(u, Np, p) {
-  return njs.dot( Np, njs.sub(u, p) );
-}
-
-// 3D vector to idir
-//
-function v2idir(v) {
-  let max_xyz = 0;
-  let max_val = v[0];
-  for (let xyz=0; xyz<3; xyz++) {
-    if (Math.abs(v[xyz]) > max_val) {
-      max_xyz = xyz;
-      max_val = Math.abs(v[xyz]);
-    }
-  }
-
-  if (v[max_xyz] < 0) { return (2*max_xyz)+1; }
-  return 2*max_xyz;
-}
-
-// (3D) angle between p and q vectors
-//
-function v3theta(p,q) {
-  let s = njs.norm2( cross3(p,q) );
-  let c = njs.dot(p,q);
-  return Math.atan2(s,c);
-}
-function in_lune(pnt_a, pnt_b, tst_c) {
-
-  let dist_ca = njs.norm2( njs.sub(tst_c, pnt_a) );
-  let dist_cb = njs.norm2( njs.sub(tst_c, pnt_b) );
-  let dist_ab = njs.norm2( njs.sub(pnt_a, pnt_b) );
-
-  //console.log("# pnt_a(", pnt_a, "), pnt_b(", pnt_b, "), tst_c(", tst_c, ")");
-  //console.log("# dist_ca:", dist_ca, "dist_cb:", dist_cb, "dist_ab:", dist_ab);
-
-  if ((dist_ca <= dist_ab) &&
-      (dist_cb <= dist_ab)) {
-    return true;
-  }
-
-  return false;
-}
-// evaluate line
-//
-// V(t) = v0 + t v
-//
-function Vt( v0, v, t ) {
-  return njs.add(v0, njs.mul(t, v));
-}
-
-// 3d cross product.
-//
-function cross3(p,q) {
-  let c0 = ((p[1]*q[2]) - (p[2]*q[1])),
-      c1 = ((p[2]*q[0]) - (p[0]*q[2])),
-      c2 = ((p[0]*q[1]) - (p[1]*q[0]));
-
-  return [c0,c1,c2];
-}
-
-
-// return "time" value of line to plane intersection
-// line(t) = v0 + t v
-// plane(u) = Np . ( u - p )
-//
-// -> Np . ( v0 + t v - p ) = 0
-// -> t = ( (Np . p) - (Np . v0) ) / (Np . v)
-//
-function t_plane_line(Np, p, v0, v) {
-  let _eps = 1/(1024*1024*1024);
-  let _d = njs.dot(Np,v);
-  if (Math.abs(_d) < _eps) { return NaN; }
-
-  let t = (njs.dot(Np,p) - njs.dot(Np,v0)) / _d;
-  return t;
-}
-
-
-
-
-
-// p0 : point on plane
-// u  : normal to plane
-// box_r: frustum scaling factor (default 1)
-//        radius of box (distance of side of frustum box to p)
-//
-// returns:
-//
-// { 
-//   idir       : if q-plane fully intersects the frustum vectors, holds idir that this happens
-//                -1 if none found
-//   idir_t     : four vector of time values (positive) that the intersection happens
-//                default if idir < 0
-//
-//   frustum_idir : frustum q-point sits in
-//   frustum_t    : 'time' values of q-plane intersection to each frustum vector
-//   frustum_v    : 3d vectors of frustum vectors, origin centered ([idir][f_idx][xyz])
-//   
-//   // WIP
-//   frame_t    : frame time (frame edge in frustum order) (source, dest)
-//   frame_updated : 1 source/dest frame_t updated
-// }
-//
-// So, here's what I think should happen:
-//
-// frustum_t[k] frustum_t[k+1] both in (0,1), wndow closed
-// frame_updated 1 -> look at frame_t to see if window needs updating
-//
-function frustum3d_intersection(p_world, q_world, box_r) {
-  box_r = ((typeof box_r === "undefined") ? 1 : box_r);
-
-  let q = njs.sub(q_world, p_world);
-
-  let s3 = 1/Math.sqrt(3);
-  let s3br = s3*box_r;
-
-  let L = box_r;
-  let _eps = (1.0 / (1024*1024*1024));
-  let oppo = [1,0, 3,2, 5,4];
-
-  let _res_t = [
-    [-1,-1, 0, 0, 0, 0 ],
-    [-1,-1, 0, 0, 0, 0 ],
-    [ 0, 0,-1,-1, 0, 0 ],
-    [ 0, 0,-1,-1, 0, 0 ],
-    [ 0, 0, 0, 0,-1,-1 ],
-    [ 0, 0, 0, 0,-1,-1 ]
-  ];
-
-  let _frustum_t = [
-    [ 0, 0, 0, 0 ],
-    [ 0, 0, 0, 0 ],
-    [ 0, 0, 0, 0 ],
-    [ 0, 0, 0, 0 ],
-    [ 0, 0, 0, 0 ],
-    [ 0, 0, 0, 0 ]
-  ];
-
-  let v_idir = [
-    [1,0,0], [-1,0,0],
-    [0,1,0], [0,-1,0],
-    [0,0,1], [0,0,-1]
-  ];
-
-  // idir:
-  // 0 : +x, 1 : -x
-  // 2 : +y, 3 : -y
-  // 4 : +z, 5 : -z
-  //
-  // ccw order
-  //
-  let frustum_v = [
-    [ [ L, L, L ], [ L,-L, L ], [ L,-L,-L ], [ L, L,-L ] ],
-    [ [-L, L, L ], [-L, L,-L ], [-L,-L,-L ], [-L,-L, L ] ],
-
-    [ [ L, L, L ], [ L, L,-L ], [-L, L,-L ], [-L, L, L ] ],
-    [ [ L,-L, L ], [-L,-L, L ], [-L,-L,-L ], [ L,-L,-L ] ],
-
-    [ [ L, L, L ], [-L, L, L ], [-L,-L, L ], [ L,-L, L ] ],
-    [ [ L, L,-L ], [ L,-L,-L ], [-L,-L,-L ], [-L, L,-L ] ]
-  ];
-
-  let v_norm = njs.norm2( [L,L,L] );
-
-  let qn = njs.norm2(q);
-  let q2 = njs.norm2Squared(q);
-  if (q2 < _eps) { return; }
-
-  let found_idir = -1;
-
-  let n_q = njs.mul(1/qn, q);
-
-  // res_t calculation
-  // simple case of where each frustum vector intersects the q-plane
-  //
-  // n, normal to plane: q / |q|
-  // plane(u) = n . (u - q)
-  // v(t) = t . v_k  (point on frustum vector, $t \in \mathbb{R}$ parameter)
-  // => n . ( t . v_k - q ) = 0
-  // => t = ( q . n ) / (n . v _k)
-  //      = ( q . (q / |q|) ) / ( (q / |q|) . v_k )
-  //      = |q|^2 / (q . v_k)
-  //  
-  for (let idir=0; idir<6; idir++) {
-    let fv_count = 0;
-    let fv_n = frustum_v[idir].length;
-
-    // test to see if there are the four frustum vectors that
-    // have positive 'time' intersection to q-plane
-    //
-    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
-      let v = frustum_v[idir][f_idx];
-
-      let qv = njs.dot(q,v);
-      if (Math.abs(qv) < _eps) { continue; }
-
-     let t = q2 / qv;
-      _frustum_t[idir][f_idx] = t;
-      if (t < 0) { continue; }
-      fv_count++;
-    }
-
-    if (fv_count < fv_n) { continue; }
-
-    // we've found a positive time intersection for each of the
-    // four frustum vectors to the q-plane.
-    // Remember the idir we've found it in
-    //
-
-    found_idir = idir;
-
-    // now fill out res_t with actual time values for the intersection
-    //
-    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
-      let v = frustum_v[idir][f_idx];
-
-      for (let pn=-1; pn<2; pn+=2) {
-        let v_nei = frustum_v[idir][(f_idx+pn+fv_n)%fv_n];
-        let win_edge = njs.sub(v_nei, v)
-
-        // plane(u) = n . (u - q)
-        // w(t) = w_0 + t w_v
-        // => n . ( w_0 + t w_v - q ) = 0
-        // => t = [ (n . q) - (n . w_0) ] / (n . w_v)
-        //      = [ ((q / |q|) . q) - ((q / |q|) . w_0) ] / ((q / |q|) . w_v)
-        //      = [ |q|^2 - (q . w_0) ] / (q . w_v)
-
-        let _d = njs.dot(q, v_nei);
-        if (Math.abs(_d) < _eps) { continue; }
-
-        let t_w = ( q2 - njs.dot(q,v) ) / _d;
-
-        let edge_idir = v2idir(win_edge);
-
-        if (njs.dot(n_q, njs.sub(v, q)) < 0) {
-          edge_idir = oppo[edge_idir];
-        }
-
-        _res_t[idir][edge_idir] = t_w;
-
-      }
-
-    }
-
-  }
-
-  // now calculate the 'time' component of intersection
-  // to the frame for the frustum the q point sits fully
-  // inside
-  //
-  // First calculate which frustum idir the q point sits in
-  // by seeing if q is comletely enclosed by four planes
-  // making up the frustum in this idir.
-  //
-  let frustum_idir=-1;
-  for (let idir = 0; idir < 6; idir++) {
-    let part_count = 0;
-    let _n = frustum_v[idir].length;
-    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
-      let v_cur = frustum_v[idir][f_idx];
-      let v_nxt = frustum_v[idir][(f_idx+1)%_n];
-      let vv = cross3(v_cur, v_nxt);
-      if (njs.dot(vv, q) >= 0) { part_count++; }
-    }
-    if (part_count == _n) { frustum_idir = idir; }
-  }
-
-  // once the frustum idir of where q is sitting in is
-  // determined, find the times for the q-plane to each
-  // of the frustum edge frame intersections.
-  // `frame_sd_t` holds the source/dest times for the frame
-  // edge, where which source or destination is filled
-  // depends on which side the source of the frustum frame
-  // edge (v_cur) sits on the q-plane.
-  //
-  let frame_d = -1;
-  let frame_sd_t = [ [-1,-1], [-1,-1], [-1,-1], [-1,-1] ];
-  let frame_sd_updated = [ [0,0], [0,0], [0,0], [0,0] ];
-  let frame_sd_side = [ 0,0,0,0 ];
-  if (frustum_idir>=0) {
-    let idir = frustum_idir;
-    let _n = frustum_v[idir].length;
-    let Nq = njs.mul( 1 / njs.norm2(q), q );
-    for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
-      let v_cur = frustum_v[idir][f_idx];
-      let v_nxt = frustum_v[idir][(f_idx+1)%_n];
-      let vv = njs.sub(v_nxt, v_cur);
-
-      let t1 = t_plane_line( Nq, q, v_cur, vv );
-
-      if ((t1 < 0) || (t1 > 1)) { continue; }
-
-      frame_sd_side[f_idx] = plane_f(v_cur, Nq, q);
-
-      if (plane_f(v_cur, Nq, q) > 0) {
-        frame_sd_t[f_idx][0] = t1;
-        frame_sd_updated[f_idx][0] = 1;
-      }
-      else {
-        frame_sd_t[f_idx][1] = t1;
-        frame_sd_updated[f_idx][1] = 1;
-      }
-    }
-  }
-
-  return {
-    "idir": found_idir,
-    "idir_t": _res_t,
-    "frustum_t": _frustum_t,
-    "frustum_v": frustum_v,
-    "frustum_idir": frustum_idir,
-    "frame_t" : frame_sd_t,
-    "frame_updated": frame_sd_updated
-  };
-
-}
-
-function simple_line(u,v,c) {
+function simple_line(u,v,c, lw) {
   c = ((typeof c === "undefined") ? [Math.random(), Math.random(), Math.random() ] : c );
+  lw = ((typeof lw === "undefined") ? 2 : lw);
 
   let matLine = new LineMaterial( {
     color: 0xffffff,
-    linewidth: 2,
+    linewidth: lw,
     vertexColors: true,
     dashed: false,
     alphaToCoverage: true
@@ -358,7 +41,12 @@ function simple_line(u,v,c) {
   points.push( u[0], u[1], u[2] );
   points.push( v[0], v[1], v[2] );
   colors.push( c[0], c[1], c[2] );
-  colors.push( c[0], c[1], c[2] );
+  if (c.length >= 6) {
+    colors.push( c[3], c[4], c[5] );
+  }
+  else {
+    colors.push( c[0], c[1], c[2] );
+  }
 
   let g = new LineGeometry();
   g.setPositions( points );
@@ -379,10 +67,8 @@ function setup_viz() {
     [0,0,1], [0,0,-1]
   ];
 
-
   let p = [ 0.15087696063772743, 0.6433609372904464, 0.14637496046413653 ];
   let q = [ 0.17501859380897827, 0.6267461187478763, 0.4539898881747171 ];
-
 
   let grid_n = 3;
   let ds = 1 / grid_n;
@@ -410,74 +96,165 @@ function setup_viz() {
   let ir = 1;
   let frustum_box_r = l0 + (ds*ir);
 
-  let fi_info = frustum3d_intersection(p, q, frustum_box_r);
+  let fi_info = lunet.frustum3d_intersection(p, q, frustum_box_r);
+
+  // VIZ
+  // VIZ
+  // VIZ
+
+  let idir_descr = [ "+x", "-x", "+y", "-y", "+z", "-z" ];
 
   console.log(fi_info);
+  console.log("frustum_idir:", fi_info.frustum_idir, "(", idir_descr[fi_info.frustum_idir], ")");
 
-  let color = new THREE.Color();
-  let matLine = new LineMaterial( {
+  // frame vector viz
+  //
 
-    color: 0xffffff,
-    linewidth: 2, // in world units with size attenuation, pixels otherwise
-    vertexColors: true,
+  let fidir = fi_info.frustum_idir;
+  let fv = fi_info.frustum_v[fidir];
+  let frame_t = fi_info.frame_t;
+  let frame_u = fi_info.frame_updated;
+  for (let idx=0; idx < frame_t.length; idx++) {
 
-    dashed: false,
-    alphaToCoverage: true,
+    let vs = njs.add(p, fv[idx]);
+    let ve = njs.add(p, fv[(idx+1)%frame_t.length]);
 
-  } );
+    let dv = njs.sub(ve,vs);
+    let du = njs.sub(vs,ve);
+
+    let cv = IDIR_COLOR[lunet.v2idir(dv)];
+    let cu = IDIR_COLOR[lunet.v2idir(du)];
+
+    if (frame_u[idx][0] == 1) {
+      let t = frame_t[idx][0];
+      simple_line( vs, njs.add(vs, njs.mul(t, dv)), [0.0,0,0, cv[0],cv[1],cv[2]], 1.5);
+    }
+
+    if (frame_u[idx][1] == 1) {
+      let t = 1-frame_t[idx][1];
+      simple_line( ve, njs.add(ve, njs.mul(t, du)), [0.0,0,0, cu[0],cu[1],cu[2]], 1.5);
+
+
+    }
+
+  }
+
+  //
+  // frame vector viz
+
+
+
+  let ldx = njs.add( legend_anchor, [ legend_dxyz[0], 0, 0 ] ),
+      ldy = njs.add( legend_anchor, [ 0, legend_dxyz[1], 0 ] ),
+      ldz = njs.add( legend_anchor, [ 0, 0, legend_dxyz[2] ] );
 
   let xyz_legend = [
-    [ [-0.5, -0.5, -0.5], [-0.25, -0.5, -0.5], [0.5, 0, 0] ],
-    [ [-0.5, -0.5, -0.5], [-0.5, -0.25, -0.5], [0, 0.5, 0] ],
-    [ [-0.5, -0.5, -0.5], [-0.5, -0.5, -0.25], [0, 0, 0.5] ]
+    [ legend_anchor, ldx, [0.5, 0, 0] ],
+    [ legend_anchor, ldy, [0, 0.5, 0] ],
+    [ legend_anchor, ldz, [0, 0, 0.5] ]
   ];
 
   for (let xyz=0; xyz<3; xyz++) {
     simple_line( xyz_legend[xyz][0], xyz_legend[xyz][1], xyz_legend[xyz][2] );
   }
 
+  // base grid
+  //
+  for (let z=0; z<=grid_n; z++) {
+    for (let y=0; y<=grid_n; y++) {
+      for (let x=0; x<=grid_n; x++) {
+        let cur = [ x/grid_n, y/grid_n, z/grid_n ];
+
+        let nxt = [ (x+1)/grid_n, y/grid_n, z/grid_n ];
+        if ((nxt[0] <= 1) && (nxt[1] <= 1) && (nxt[2] <= 1)) {
+          simple_line( cur, nxt, [0.2, 0.2, 0.2], 0.5);
+        }
+
+        nxt = [ (x)/grid_n, (y+1)/grid_n, z/grid_n ];
+        if ((nxt[0] <= 1) && (nxt[1] <= 1) && (nxt[2] <= 1)) {
+          simple_line( cur, nxt, [0.2, 0.2, 0.2], 0.5);
+        }
+
+        nxt = [ (x)/grid_n, (y)/grid_n, (z+1)/grid_n ];
+        if ((nxt[0] <= 1) && (nxt[1] <= 1) && (nxt[2] <= 1)) {
+          simple_line( cur, nxt, [0.2, 0.2, 0.2], 0.5);
+        }
+
+
+      }
+    }
+  }
+
   simple_line( p, q, [1,1,1] );
   simple_line( p, njs.add(p, njs.mul(l0, v_idir[p_near_idir])), [1,0,1] );
 
-  console.log(p_near_idir);
-
   let _shift = 1/512;
+  _shift = 0;
 
   for (let idir=0; idir<6; idir++) {
 
-    color.setHSL( Math.random(), 1.0, 0.5, THREE.SRGBColorSpace );
     for (let v_idx=0; v_idx<fi_info.frustum_v[idir].length; v_idx++) {
       let pp = njs.add(p, njs.mul(_shift, v_idir[idir]));
       let tv = njs.add(pp, fi_info.frustum_v[idir][v_idx]);
-      simple_line( pp, tv, [color.r, color.g, color.b ] );
+      simple_line( pp, tv, [0.75, 0.75, 0.75 ], 0.5 );
     }
 
-    let frame_points = [];
-    let frame_colors = [];
-
-    color.setHSL( Math.random(), 1.0, 0.5, THREE.SRGBColorSpace );
+    let prv = njs.add(p, fi_info.frustum_v[idir][ fi_info.frustum_v[idir].length-1 ]);
     for (let v_idx=0; v_idx<fi_info.frustum_v[idir].length; v_idx++) {
-      let pp = njs.add(p, njs.mul(_shift, v_idir[idir]));
-      let tv = njs.add(pp, fi_info.frustum_v[idir][v_idx]);
-      frame_points.push( tv[0], tv[1], tv[2] );
-      frame_colors.push(color.r, color.g, color.b);
+      let tv = njs.add(p, fi_info.frustum_v[idir][v_idx]);
+      simple_line(prv, tv, [0.35, 0.2, 0.2], 0.45 );
+      prv = tv;
     }
-    let pp = njs.add(p, njs.mul(1/128, v_idir[idir]));
-    let tv = njs.add(pp, fi_info.frustum_v[idir][0]);
-    frame_points.push( tv[0], tv[1], tv[2] );
-    frame_colors.push(color.r, color.g, color.b);
-
-    let fg = new LineGeometry();
-    fg.setPositions( frame_points );
-    fg.setColors( frame_colors );
-
-    let fl = new Line2( fg, matLine );
-    fl.computeLineDistances();
-    fl.scale.set( 1, 1, 1 );
-    scene.add( fl );
 
   }
 
+
+  //----
+
+  // perpendicular q-plane viz
+  //
+
+  let qt = njs.sub( q, p );
+  let Nqt = njs.mul( 1/njs.norm2(qt), qt );
+
+  let thetax = Math.abs(lunet.v3theta( [1,0,0], Nqt ));
+  let thetay = Math.abs(lunet.v3theta( [0,1,0], Nqt ));
+  let thetaz = Math.abs(lunet.v3theta( [0,0,1], Nqt ));
+
+  let qt_plane_pnt = [0,0,0];
+
+  if ((thetax <= thetay) && (thetax <= thetaz)) {
+    qt_plane_pnt[0] = -Nqt[1] / Nqt[0];
+    qt_plane_pnt[1] = 1;
+  }
+  else if ((thetay <= thetax) && (thetay <= thetaz)) {
+    qt_plane_pnt[1] = -Nqt[0] / Nqt[1];
+    qt_plane_pnt[0] = 1;
+  }
+  else {
+    qt_plane_pnt[2] = -Nqt[1] / Nqt[2];
+    qt_plane_pnt[1] = 1;
+  }
+
+  qt_plane_pnt = njs.mul( 1/njs.norm2(qt_plane_pnt), qt_plane_pnt );
+
+  let plane_r = frustum_box_r * Math.sqrt(3);
+
+  let n_seg = 32;
+  for (let seg=0; seg<n_seg; seg++) {
+    let theta_cur = 2*Math.PI * (seg+0) / n_seg;
+    let theta_nxt = 2*Math.PI * (seg+1) / n_seg;
+    let qr0 = lunet.rodrigues( qt_plane_pnt, Nqt, theta_cur );
+    let qr1 = lunet.rodrigues( qt_plane_pnt, Nqt, theta_nxt );
+
+    let qrt = njs.add( q, njs.mul( plane_r, qr0 ) );
+
+    let _u0 = njs.add(q, njs.mul(plane_r, qr0));
+    let _u1 = njs.add(q, njs.mul(plane_r, qr1));
+
+    simple_line(q, qrt, [0,0,0, 0.1, 0.2, 0.3], 0.3);
+    simple_line(_u0, _u1, [0.1, 0.2, 0.3], 0.3);
+  }
 
 }
 
@@ -540,12 +317,19 @@ function simple_text(txt, pos, scale, color) {
 
 function init() {
 
+
   const loader = new FontLoader();
   loader.load( 'fonts/helvetiker_regular.typeface.json', function ( font ) {
+
+    let ldx = njs.add(legend_anchor, [legend_dxyz[0], 0, 0 ]),
+        ldy = njs.add(legend_anchor, [0, legend_dxyz[1], 0 ]),
+        ldz = njs.add(legend_anchor, [0, 0, legend_dxyz[1] ]);
+
     g_data["font"] = font;
-    simple_text('z', [-0.65, -0.55, -0.2 ], 0.125 );
-    simple_text('x', [-0.2, -0.55, -0.5 ], 0.125 );
-    simple_text('y', [-0.5, -0.2, -0.5 ], 0.125 );
+    //simple_text('z', [-0.65, -0.55, -0.2 ], 0.035 );
+    simple_text('z', ldz, 0.035 );
+    simple_text('y', ldy, 0.035 );
+    simple_text('x', ldx, 0.035 );
   });
 
   renderer = new THREE.WebGLRenderer( { antialias: true } );
