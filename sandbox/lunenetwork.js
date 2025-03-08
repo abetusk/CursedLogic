@@ -551,21 +551,43 @@ function frustum3d_intersection(p_world, q_world, box_r) {
   // depends on which side the source of the frustum frame
   // edge (v_cur) sits on the q-plane.
   //
+  let in_box = false;
+
   let frame_d = -1;
   let frame_sd_t = [ [-1,-1], [-1,-1], [-1,-1], [-1,-1] ];
   let frame_sd_updated = [ [0,0], [0,0], [0,0], [0,0] ];
   let frame_sd_side = [ 0,0,0,0 ];
   if (frustum_idir>=0) {
+
+    let Nq = njs.mul( 1 / njs.norm2(q), q );
+
     let idir = frustum_idir;
     let _n = frustum_v[idir].length;
-    let Nq = njs.mul( 1 / njs.norm2(q), q );
     for (let f_idx=0; f_idx < frustum_v[idir].length; f_idx++) {
       let v_cur = frustum_v[idir][f_idx];
       let v_nxt = frustum_v[idir][(f_idx+1)%_n];
+
+      // both points on frame side line are
+      // on the opposite side of the q plane,
+      // so this frame side line is now completely
+      // closed
+      //
+      if ((plane_f(v_cur, Nq,q) > 0) &&
+          (plane_f(v_nxt, Nq,q) > 0)) {
+        frame_sd_t[f_idx][0] = 1;
+        frame_sd_t[f_idx][1] = 0;
+        frame_sd_updated[f_idx][0] = 1;
+        frame_sd_updated[f_idx][1] = 1;
+        continue;
+      }
+
+      // now we find the time intersection of
+      // the q-plane to the line from v_cur to v_nxt
+      // and if it intersects somewhere in the middle,
+      // update the frame_sd accorindgly
+      //
       let vv = njs.sub(v_nxt, v_cur);
-
       let t1 = t_plane_line( Nq, q, v_cur, vv );
-
       if ((t1 < 0) || (t1 > 1)) { continue; }
 
       frame_sd_side[f_idx] = plane_f(v_cur, Nq, q);
@@ -579,9 +601,16 @@ function frustum3d_intersection(p_world, q_world, box_r) {
         frame_sd_updated[f_idx][1] = 1;
       }
     }
+
+
+    let v01 = njs.sub( frustum_v[idir][1], frustum_v[idir][0] );
+    let v02 = njs.sub( frustum_v[idir][2], frustum_v[idir][0] );
+    let v_plane_n = cross3( v01, v02 );
+    if (plane_f(q, v_plane_n, frustum_v[idir][0]) < 0) { in_box = true; }
   }
 
   return {
+    "in_box": in_box,
     "idir": found_idir,
     "idir_t": _res_t,
     "frustum_t": _frustum_t,
@@ -1147,24 +1176,6 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
 
   ];
 
-
-
-  //DEBUG
-  //DEBUG
-  let debug_frustum = false;
-  if (debug_frustum) {
-    for (let idir=0; idir<frustum_v.length; idir++) {
-      let fr = frustum_v[idir];
-      for (let v_idx=0; v_idx<fr.length; v_idx++) {
-        console.log(fr[v_idx][0],fr[v_idx][1],fr[v_idx][2]);
-      }
-      console.log(fr[0][0],fr[0][1],fr[0][2]);
-      console.log("\n");
-    }
-  }
-  //DEBUG
-  //DEBUG
-
   // grid cell size
   //
   let grid_s = Math.cbrt(n);
@@ -1200,13 +1211,6 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
   info.start = grid_start;
   info.size = grid_size;
 
-
-  if (_debug) {
-    console.log("#s3:", s3, "ds:", ds, "grid_n:", grid_n);
-  }
-
-
-
   // initialize points, creating random ones if ncessary
   //
   for (let i=0; i<n; i++) {
@@ -1238,40 +1242,8 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
     info.point_grid_bp[i] = [ix,iy,iz];
   }
 
-  //DEBUG
-  //DEBUG
-  //print grid
-  let _debug_grid = false;
-  if (_debug_grid) {
-    console.log("#grid (grid_n:", grid_n, "ds:", ds,  ")");
-    for (let iz=0; iz<info.grid.length; iz++) {
-      for (let iy=0; iy<info.grid[iz].length; iy++) {
-        for (let ix=0; ix<info.grid[iz][iy].length; ix++) {
-          console.log( ix*ds, iy*ds, iz*ds );
-          console.log( (ix+1)*ds, iy*ds, iz*ds );
-          console.log("\n");
-
-          console.log( ix*ds, iy*ds, iz*ds );
-          console.log( ix*ds, (iy+1)*ds, iz*ds );
-          console.log("\n");
-
-          console.log( ix*ds, iy*ds, iz*ds );
-          console.log( ix*ds, iy*ds, (iz+1)*ds );
-          console.log("\n");
-
-        }
-      }
-    }
-  }
-  //DEBUG
-  //DEBUG
-
 
   for (let p_idx = 0; p_idx < info.P.length; p_idx++) {
-
-    //FAILURE DEBUGGING
-    //if ((p_idx == 14) || (p_idx==15)){ _debug = true; }
-    //else { _debug = false; }
 
     let p = info.P[p_idx];
 
@@ -1296,6 +1268,7 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
     // so idir direction shouldn't be touched and
     // set with values to allow for easy checks below
     //
+    /*
     let p_window = [
       [ [ 1,-1,-1], [ 0,-1,-1] ],
       [ [ 1,-1,-1], [ 0,-1,-1] ],
@@ -1305,6 +1278,25 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
 
       [ [-1,-1, 1], [-1,-1, 0] ],
       [ [-1,-1, 1], [-1,-1, 0] ]
+    ];
+    */
+
+    // start end time of frame vector.
+    // These are frustum vector anchors that
+    // go to the next frustum vector in order.
+    //
+    // for example, frustum_v[0][3] to frustum_v[0][0]
+    // for p_window_frame[0][3][0,1] time
+    //
+    let p_window_frame = [
+      [ [0,1], [0,1], [0,1], [0,1] ],
+      [ [0,1], [0,1], [0,1], [0,1] ],
+
+      [ [0,1], [0,1], [0,1], [0,1] ],
+      [ [0,1], [0,1], [0,1], [0,1] ],
+
+      [ [0,1], [0,1], [0,1], [0,1] ],
+      [ [0,1], [0,1], [0,1], [0,1] ]
     ];
 
     let p_near_idir = 1;
@@ -1324,20 +1316,6 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
     l0 *= ds;
     let t0 = l0*Math.sqrt(3);
 
-    if (_debug) {
-      console.log("### INIT: P[", p_idx, "]:", p, "l0:", l0, "near_idir:", p_near_idir, "(ip:", ip, ")");
-      console.log("# init Wp:", JSON.stringify(Wp), "ip:", JSON.stringify(ip), "(", grid_n, ",", grid_n, ",", grid_n, ")");
-      console.log("# init p_fence :", JSON.stringify(p_fence));
-      //console.log("# init p_window:", JSON.stringify(p_window));
-      for (let _ii=0; _ii<p_window.length; _ii++) {
-        console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
-      }
-
-      console.log(p[0], p[1], p[2]);
-      console.log(p[0] + l0*v_idir[p_near_idir][0], p[1] + l0*v_idir[p_near_idir][1], p[2] + l0*v_idir[p_near_idir][2]);
-      console.log("\n");
-    }
-
     let p_f_v = [];
     for (let idx=0; idx<frustum_v.length; idx++) {
       p_f_v.push([]);
@@ -1347,42 +1325,10 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
       }
     }
 
-    /*
-    if (_debug) {
-      //DEBUG
-      //DEBUG
-      console.log("# local p[", p_idx, "], fence:", p_fence, " frustum:");
-      for (let idx=0; idx<p_f_v.length; idx++) {
-        for (let ii=0; ii<p_f_v[idx].length; ii++) {
-          console.log(p[0], p[1], p[2]);
-          //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
-          let _vt = njs.add(p, p_f_v[idx][ii]);
-          console.log( _vt[0], _vt[1], _vt[2] );
-          console.log("\n");
-
-          console.log(p[0], p[1], p[2]);
-          //console.log(p_f_v[idx][ii][0], p_f_v[idx][ii][1], p_f_v[idx][ii][2]);
-          _vt = njs.add(p, njs.mul(grid_n, p_f_v[idx][ii]));
-          console.log( _vt[0], _vt[1], _vt[2] );
-          console.log("\n");
-        }
-      }
-
-      console.log("# l0 test");
-      for (let ii=0; ii<4; ii++) {
-        console.log(p[0], p[1], p[2]);
-        let _vt = njs.add( p, njs.mul( t0, frustum_v[p_near_idir][ii] ) );
-        console.log(_vt[0], _vt[1], _vt[2]);
-        console.log("\n");
-      }
-      //DEBUG
-      //DEBUG
-    }
-    */
-
     //  points in fence (index)
     //
-    let pif_list = [];
+    let plat_list = [];
+    let q_carry = [];
 
     for (let ir = 0; ir < grid_n; ir++) {
 
@@ -1390,84 +1336,72 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
       //
       let frustum_box_r = l0 + (ds*ir);
 
-      if (_debug) {
-        console.log("\n# ir:", ir, "fence:", p_fence.join(","));
-        for (let _ii=0; _ii<p_window.length; _ii++) {
-          console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
-        }
-      }
-
-
       //---
+      // FANCE CHECK
+      //
+
       // coarse fence
       //
+      let idir_secured = [0,0, 0,0, 0,0];
+
       let fenced_in = true;
-      for (let ii=0; ii<p_fence.length; ii++) {
-        if (ir <= p_fence[ii]) { fenced_in = false; break; }
+      for (let idir=0; idir<p_fence.length; idir++) {
+        if (ir <= p_fence[idir]) { fenced_in = false; }
+        else { idir_secured[idir] = 1; }
       }
-      if (fenced_in) {
-
-        if (_debug) {
-          console.log("#fenced in (fence:", p_fence, "), breaking");
-        }
-
-        break;
-      }
+      if (fenced_in) { break; }
       //
       //---
 
-      //---
-      // shrinking window bounds check
+      // window frame fence
       //
       fenced_in = true;
-      for (let idir=0; idir<p_window.length; idir++) {
-        let _m = p_window[idir][0];
-        let _M = p_window[idir][1];
+      for (let idir=0; idir<p_window_frame.length; idir++) {
 
-        for (let xyz=0; xyz<3; xyz++) {
-          if ( ((_m[xyz] == -1) || _M[xyz] == -1) ||
-               (_m[xyz] < _M[xyz]) ) {
+        let window_closed = true;
+        for (let v_idx=0; v_idx < p_window_frame[idir].length; v_idx++) {
+          if (p_window_frame[idir][v_idx][0] < p_window_frame[idir][v_idx][1]) {
+            window_closed = false;
             fenced_in = false;
             break;
           }
         }
-        if (!fenced_in) { break; }
+        if (window_closed) { idir_secured[idir] = 1; }
       }
+
+      if (fenced_in) { break; }
+
+      fenced_in = true;
+      for (let idir=0; idir<idir_secured.length; idir++) {
+        if (idir_secured[idir] == 0) {
+          fenced_in = false;
+          break;
+        }
+      }
+
+      if (fenced_in) { break; }
+
       //
+      // FANCE CHECK
       //---
 
-      if (fenced_in) {
-
-        if (_debug) {
-          console.log("# fenced in (window):");
-          for (let _ii=0; _ii<p_window.length; _ii++) {
-            console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
-          }
-          console.log("# fenced in (window) break");
-        }
-
-        break;
-      }
 
       let sweep = grid_sweep_perim_3d(info, info.P[p_idx], ir);
 
       // collect all q points in perimiter of current grid perimeter
       //
       let sweep_q_idx = [];
+      for (let i=0; i<q_carry.length; i++) { sweep_q_idx.push(q_carry[i]); }
       for (let path_idx = 0; path_idx < sweep.path.length; path_idx++) {
         let ixyz = sweep.path[path_idx];
         let grid_bin = info.grid[ixyz[2]][ixyz[1]][ixyz[0]];
         for (let bin_idx = 0; bin_idx < grid_bin.length; bin_idx++) {
-          sweep_q_idx.push( grid_bin[bin_idx] );
+          let q_idx = grid_bin[bin_idx];
+          sweep_q_idx.push( q_idx );
+          plat_list.push( q_idx );
         }
-
-        //DEBUG
-        if (_debug) {
-          console.log("# grid_bin", ixyz, ":", grid_bin.join(","));
-        }
-        //DEBUG
-
       }
+      q_carry = [];
 
       // go through each, updating coarse fence and shrinking window
       //
@@ -1475,26 +1409,17 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
         let q_idx = sweep_q_idx[nei_idx];
         if (q_idx == p_idx) { continue; }
 
-        if (_debug) {
-          console.log("# adding q_idx:", q_idx, "to pif_list (", pif_list.join(","), ") (p_idx:", p_idx, ")");
-          for (let _ii=0; _ii<p_window.length; _ii++) {
-            console.log("# p_window[", _ii, "]:", JSON.stringify(p_window[_ii]));
-          }
-        }
-
-        pif_list.push( q_idx );
+        //plat_list.push( q_idx );
 
         let q = info.P[q_idx];
 
         //let fi_info = frustum3d_intersection(p, q, ds);
         let fi_info = frustum3d_intersection(p, q, frustum_box_r);
 
-        if (_debug) {
-          console.log("# p[", p_idx,"]:", p, "q[", q_idx, "]:", q);
-          console.log("# frustum_idir:", fi_info.frustum_idir, "(", idir_descr[ fi_info.frustum_idir ], ")");
-          for (let idir=0; idir<6; idir++) {
-            console.log("#frustum_t[", idir, "]", JSON.stringify(fi_info.frustum_t[idir]));
-          }
+        let q_carried = false;
+        if (!fi_info.in_box) {
+          q_carry.push( q_idx );
+          q_carried = true;
         }
 
         // coarse fence updates
@@ -1516,148 +1441,66 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
           }
         }
 
+
+
         // shrinking window updates
         //
         let _vn = fi_info.frame_t.length;
         for (let v_idx=0; v_idx < _vn; v_idx++) {
 
-          let frame_idir = v2idir( njs.sub( fi_info.frustum_v[(v_idx+1)%_vn], fi_info.frustum_v[v_idx] ) );
+          let _fidir = fi_info.frustum_idir;
 
-          let mM = [ fi_info.frame_t[v_idx][0], fi_info.frame_t[v_idx][1] ];
-          for (let iI=0; iI<2; iI++) {
-            if (fi_info.frame_updated[v_idx][iI]) {
+          if (fi_info.frame_updated[v_idx][0]) {
+            if (p_window_frame[_fidir][v_idx][0] < fi_info.frame_t[v_idx][0]) {
+              p_window_frame[_fidir][v_idx][0] = fi_info.frame_t[v_idx][0];
+            }
+          }
 
-              if ((p_window[fi_info.frustum_idir][iI][frame_idir] < 0) ||
-                  (mM[iI] > p_window[fi_info.frustum_idir][iI][frame_idir])) {
-                p_window[fi_info.frustum_idir][iI][frame_idir] = mM[iI];
-
-                if (_debug) {
-                  console.log("#\n#{p_window_update} frustum_idir:", fi_info.frustum_idir, "v_idx:", v_idx, "mM:", mM, "iI:", iI, "frame_idir:", frame_idir);
-                  console.log("#   p_window[fr_idir:", fi_info.frustum_idir, "][iI:", iI, "][frame_idir:", frame_idir, "]:",
-                    p_window[fi_info.frustum_idir][iI][frame_idir]);
-                  console.log("#");
-
-                  //console.log("# p_window updated:");
-                  //for (let _ii=0; _ii<p_window.length; _ii++) {
-                  //  console.log("# p_window[", _ii, "]:", p_window[_ii])
-                  //}
-
-                }
-              }
-              else {
-
-                if (_debug) {
-                  console.log("# skipping p_window update (fr_idir:", fi_info.frustum_idir, "iI:", iI, "frame_idir:", frame_idir, "mM[", iI, "]:", mM[iI],
-                    "p_window[", fi_info.frustum_idir, "][", iI, "][", frame_idir, "]:", p_window[fi_info.frustum_idir][iI][frame_idir]);
-                }
-
-              }
-
+          if (fi_info.frame_updated[v_idx][1]) {
+            if (p_window_frame[_fidir][v_idx][1] > fi_info.frame_t[v_idx][1]) {
+              p_window_frame[_fidir][v_idx][1] = fi_info.frame_t[v_idx][1];
             }
           }
 
         }
 
+        let yield_data = {
+          "sweep_idx": nei_idx,
+          "sweep_q_idx": sweep_q_idx,
+          "carry": q_carried,
+          "frustum_box_r": frustum_box_r,
+          "p_near_idir": p_near_idir,
+          "ir": ir,
+          "ds": ds,
+          "l0": l0,
+          "t0": t0,
+          "p_idx": p_idx,
+          "q_idx": q_idx,
+          "p": p,
+          "q": q,
+          "fi_info": fi_info,
+          "p_fence": p_fence,
+          //"p_window": p_window,
+          "p_window_frame": p_window_frame
+        };
 
-
-        /*
-
-        let dqp = njs.sub(q,p);
-        let qp2 = njs.norm2Squared(dqp);
-
-        let t_frustum = [];
-        for (let idir=0; idir<p_f_v.length; idir++) {
-          t_frustum.push([]);
-
-          let pos_count = 0,
-              min_tI = grid_n,
-              max_tI = -1;
-
-          let _debug_vidx = -1, _debug_t = -1;
-
-          for (let ii=0; ii<p_f_v[idir].length; ii++) {
-
-            let v = p_f_v[idir][ii];
-
-            let qp_v = njs.dot(dqp,v);
-
-            if ( Math.abs(qp_v) < _eps) {
-
-              if (_debug) {
-                console.log("#skipping p_frustum[", idir, "][", ii, "]: ( (q-p).v =", qp_v, ")");
-              }
-
-              continue;
-            }
-
-            let t = qp2 / qp_v;
-            if (t < 0) { continue; }
-
-            let tI = Math.floor(t - t0);
-
-            if (_debug) {
-              console.log("##>> F[", idir, "][", ii, "] p:", p, "q:", q, "t:", t, "t0:", t0, "tI:", tI);
-            }
-
-            pos_count++;
-            if (tI < min_tI) {
-              min_tI = tI;
-            }
-
-            if (tI > max_tI) {
-              max_tI = tI;
-              _debug_vidx = ii;
-              _debug_t = t;
-            }
-
-          }
-
-          if (pos_count == 4) {
-            //if (p_fence[idir] > min_tI) {
-              //p_fence[idir] = min_tI;
-
-            if (p_fence[idir] > max_tI) {
-              p_fence[idir] = max_tI;
-
-              //DEBUG
-              //DEBUG
-              if (_debug) {
-                if (_debug_vidx >= 0) {
-                  console.log(q[0], q[1], q[2]);
-                  let _v = njs.add(p, njs.mul(_debug_t, p_f_v[idir][_debug_vidx])) ;
-                  console.log( _v[0], _v[1], _v[2] );
-                  console.log("\n");
-                }
-
-                console.log("## UPDATING FENCE (p_idx:", p_idx, "ir:", ir, ")>> pos_count:", pos_count,
-                  "idir:", idir, "fence now:", p_fence, "from q[", q_idx, "]:", q);
-              }
-              //DEBUG
-              //DEBUG
-
-            }
-          }
-
-        }
-        */
+        yield yield_data;
 
       } // END for nei_idx in sweep
 
     } // END for ir
 
 
-
-
     //---
     // naive relative neighborhood graph detection by considering
-    // all points in fence (pif_list)
+    // all points in fence (plat_list)
     //
-    for (let i = 0; i < pif_list.length; i++) {
-      let q_idx = pif_list[i];
+    for (let i = 0; i < plat_list.length; i++) {
+      let q_idx = plat_list[i];
       let _found = true;
-      for (let j = 0; j < pif_list.length; j++) {
+      for (let j = 0; j < plat_list.length; j++) {
         if (i==j) { continue; }
-        let u_idx = pif_list[j];
+        let u_idx = plat_list[j];
         if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
           _found = false;
           break;
@@ -4518,6 +4361,7 @@ function export_f() {
   exports.frustum3d_intersection = frustum3d_intersection;
   exports.naive_relnei_E = naive_relnei_E;
   exports.lune_network_3d_shrinking_fence = lune_network_3d_shrinking_fence;
+  exports._lune_network_3d_shrinking_fence = _lune_network_3d_shrinking_fence;
   exports.rodrigues = rodrigues;
 
 }
