@@ -1,6 +1,16 @@
 Todo
 ===
 
+* viz
+  - highlight idir frustum when picking points
+  - highlight updated frame edges
+  - consider displaying all q points in fence
+* check/confirm frame edge calculation done correctly
+
+done
+---
+
+* make naive method and compare on 10,100,1000, if possible
 * 3d rng
 * check solution (from fence 2d)
   - for each point
@@ -10,7 +20,4 @@ Todo
     + construct bounding box
     + do naive calculation relative to bounding box
 
-done
----
 
-* make naive method and compare on 10,100,1000, if possible
