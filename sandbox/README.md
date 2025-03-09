@@ -152,7 +152,22 @@ Once a vein node enters the kill zone of an auxin node, the auxin node is not im
 but is earmarked for future removal when all descendent vein nodes have converged into the kill zone.
 
 
+#### Further Notes
 
+Some more verbose thoughts:
+
+* For each auxin node, $a$, calculate the RNG to the vein nodes
+* Add new vein nodes if the source vein node isn't within the kill distance of the auxin
+  node $a$
+  - Earmark newly added vein nodes that are RNG connected to auxin node $a$ and within the
+    kill distance of $a$
+* Remove auxin node $a$ if all RNG connected vein nodes are within the kill distance
+
+So the API for the RNG is:
+
+* add points (sets up the vein nodes, puts them in grids, etc)
+* add single auxin point and calculate RNG(a)
+* remove single auxin point $a$
 
 References
 ---
