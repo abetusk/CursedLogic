@@ -5,7 +5,7 @@ These are some notes on the space colonization algorithm.
 
 ---
 
-### Open Venetian Pattern
+### Open Venatian Pattern
 
 The basis of the space colonization algorithm is to start with
 a list of auxin nodes in some space, 2D say, that act as attractors
@@ -117,7 +117,7 @@ Some points that initially caused me confusion:
     the two auxin nodes
   
 
-### Closed Venetian Pattern
+### Closed Venatian Pattern
 
 Here, auxin nodes now influence all vein nodes within their relative neighborhood graph.
 
@@ -144,7 +144,7 @@ $$
 \text{RNG}(V) = \\{ (p,q) : (p,q) \in E, |p-q| \le \max  _ {v \in V / \{p,q\} } ( |p-v|, |q-v| ) \\}
 $$
 
-The Closed Venetian Pattern algorithm considers all vein nodes within the relative neighborhood
+The Closed Venatian Pattern algorithm considers all vein nodes within the relative neighborhood
 graph of each auxin node.
 That is, instead of each auxin node linking to at most one vein node, they now link up to multiple.
 

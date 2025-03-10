@@ -1127,7 +1127,379 @@ function lune_network_3d_shrinking_fence(n, B, _point) {
   return _res.value;
 }
 
-function* _lune_network_3d_shrinking_fence(n, B, _point) {
+
+function* _point_lune_network_3d_shrinking_fence(ctx, p, p_idx) {
+  p_idx = ((typeof p_idx === "undefined") ? -1 : p_idx);
+
+  let P = ctx.P;
+  let E = [];
+
+  let grid_n = ctx.grid_n;
+  let grid_s = ctx.grid_s;
+  let ds = ctx.ds;
+  let frustum_v = ctx.frustum_v;
+
+  let Wp = [ p[0]*grid_n, p[1]*grid_n, p[2]*grid_n ];
+  let ip = Wp.map( Math.floor );
+
+  // idir coarse fence bounds
+  //
+  let p_fence = [
+    grid_n-ip[0], ip[0],
+    grid_n-ip[1], ip[1],
+    grid_n-ip[2], ip[2]
+  ];
+
+  // start end time of frame vector.
+  // These are frustum vector anchors that
+  // go to the next frustum vector in order.
+  //
+  // for example, frustum_v[0][3] to frustum_v[0][0]
+  // for p_window_frame[0][3][0,1] time
+  //
+  let p_window_frame = [
+    [ [0,1], [0,1], [0,1], [0,1] ],
+    [ [0,1], [0,1], [0,1], [0,1] ],
+
+    [ [0,1], [0,1], [0,1], [0,1] ],
+    [ [0,1], [0,1], [0,1], [0,1] ],
+
+    [ [0,1], [0,1], [0,1], [0,1] ],
+    [ [0,1], [0,1], [0,1], [0,1] ]
+  ];
+
+  let p_near_idir = 1;
+  let l0 = Wp[0] - ip[0];
+  for (let xyz=0; xyz<3; xyz++) {
+    let _l = Wp[xyz] - ip[xyz];
+    if (_l < l0) {
+      p_near_idir = 2*xyz + 1;
+      l0 = _l;
+    }
+    _l = 1 - (Wp[xyz] - ip[xyz]);
+    if (_l < l0) {
+      p_near_idir = 2*xyz + 0;
+      l0 = _l;
+    }
+  }
+  l0 *= ds;
+  let t0 = l0*Math.sqrt(3);
+
+  let p_f_v = [];
+  for (let idx=0; idx<frustum_v.length; idx++) {
+    p_f_v.push([]);
+    for (let ii=0; ii<frustum_v[idx].length; ii++) {
+      //p_f_v[idx].push( njs.add( njs.mul(ds, frustum_v[idx][ii]), p ) );
+      p_f_v[idx].push( njs.mul(ds, frustum_v[idx][ii]) );
+    }
+  }
+
+  //  points in fence (index)
+  //
+  let plat_list = [];
+  let q_carry = [];
+
+  for (let ir = 0; ir < grid_n; ir++) {
+
+    // 'radius' of frustum box centered at p
+    //
+    let frustum_box_r = l0 + (ds*ir);
+
+    //---
+    // FENCE CHECK
+    //
+
+    // coarse fence
+    //
+    let idir_secured = [0,0, 0,0, 0,0];
+
+    let fenced_in = true;
+    for (let idir=0; idir<p_fence.length; idir++) {
+      if (ir <= p_fence[idir]) { fenced_in = false; }
+      else { idir_secured[idir] = 1; }
+    }
+    if (fenced_in) { break; }
+    //
+    //---
+
+    // window frame fence
+    //
+    fenced_in = true;
+    for (let idir=0; idir<p_window_frame.length; idir++) {
+
+      let window_closed = true;
+      for (let v_idx=0; v_idx < p_window_frame[idir].length; v_idx++) {
+        if (p_window_frame[idir][v_idx][0] < p_window_frame[idir][v_idx][1]) {
+          window_closed = false;
+          fenced_in = false;
+          break;
+        }
+      }
+      if (window_closed) { idir_secured[idir] = 1; }
+    }
+
+    if (fenced_in) { break; }
+
+    fenced_in = true;
+    for (let idir=0; idir<idir_secured.length; idir++) {
+      if (idir_secured[idir] == 0) {
+        fenced_in = false;
+        break;
+      }
+    }
+
+    if (fenced_in) { break; }
+
+    //
+    // FENCE CHECK
+    //---
+
+
+    //let sweep = grid_sweep_perim_3d(info, info.P[p_idx], ir);
+    let sweep = grid_sweep_perim_3d(ctx, p, ir);
+
+    // collect all q points in perimiter of current grid perimeter
+    //
+    let sweep_q_idx = [];
+    for (let i=0; i<q_carry.length; i++) { sweep_q_idx.push(q_carry[i]); }
+    for (let path_idx = 0; path_idx < sweep.path.length; path_idx++) {
+      let ixyz = sweep.path[path_idx];
+      let grid_bin = ctx.grid[ixyz[2]][ixyz[1]][ixyz[0]];
+      for (let bin_idx = 0; bin_idx < grid_bin.length; bin_idx++) {
+        let q_idx = grid_bin[bin_idx];
+        if (q_idx == p_idx) { continue; }
+        sweep_q_idx.push( q_idx );
+        plat_list.push( q_idx );
+      }
+    }
+    q_carry = [];
+
+    // go through each, updating coarse fence and shrinking window
+    //
+    for (let nei_idx=0; nei_idx < sweep_q_idx.length; nei_idx++) {
+      let q_idx = sweep_q_idx[nei_idx];
+      if (q_idx == p_idx) { continue; }
+
+      //plat_list.push( q_idx );
+
+      let q = ctx.P[q_idx];
+
+      let fi_info = frustum3d_intersection(p, q, frustum_box_r);
+
+      let q_carried = false;
+      if (!fi_info.in_box) {
+        q_carry.push( q_idx );
+        q_carried = true;
+      }
+
+      // coarse fence updates
+      //
+      for (let idir=0; idir<6; idir++) {
+        let t_max = -1;
+        let f_count=0;
+        for (let i=0; i<fi_info.frustum_t[idir].length; i++) {
+          if (fi_info.frustum_t[idir][i] > 0) {
+            f_count++;
+            if (fi_info.frustum_t[idir][i] > t_max) {
+              t_max = fi_info.frustum_t[idir][i];
+            }
+          }
+        }
+        if (f_count == fi_info.frustum_t[idir].length) {
+          let ti_max = Math.ceil(t_max);
+          if (ti_max < p_fence[idir]) { p_fence[idir] = ti_max; }
+        }
+      }
+
+
+
+      // shrinking window updates
+      //
+      let _vn = fi_info.frame_t.length;
+      for (let v_idx=0; v_idx < _vn; v_idx++) {
+
+        let _fidir = fi_info.frustum_idir;
+
+        if (fi_info.frame_updated[v_idx][0]) {
+          if (p_window_frame[_fidir][v_idx][0] < fi_info.frame_t[v_idx][0]) {
+            p_window_frame[_fidir][v_idx][0] = fi_info.frame_t[v_idx][0];
+          }
+        }
+
+        if (fi_info.frame_updated[v_idx][1]) {
+          if (p_window_frame[_fidir][v_idx][1] > fi_info.frame_t[v_idx][1]) {
+            p_window_frame[_fidir][v_idx][1] = fi_info.frame_t[v_idx][1];
+          }
+        }
+
+      }
+
+      let yield_data = {
+        "sweep_idx": nei_idx,
+        "sweep_q_idx": sweep_q_idx,
+        "carry": q_carried,
+        "frustum_box_r": frustum_box_r,
+        "p_near_idir": p_near_idir,
+        "ir": ir,
+        "ds": ds,
+        "l0": l0,
+        "t0": t0,
+        "p_idx": p_idx,
+        "q_idx": q_idx,
+        "p": p,
+        "q": q,
+        "fi_info": fi_info,
+        "p_fence": p_fence,
+        //"p_window": p_window,
+        "p_window_frame": p_window_frame
+      };
+
+      yield yield_data;
+
+    } // END for nei_idx in sweep
+
+  } // END for ir
+
+
+  //---
+  // naive relative neighborhood graph detection by considering
+  // all points in fence (plat_list)
+  //
+  for (let i = 0; i < plat_list.length; i++) {
+    let q_idx = plat_list[i];
+    let _found = true;
+    for (let j = 0; j < plat_list.length; j++) {
+      if (i==j) { continue; }
+      let u_idx = plat_list[j];
+      //if (in_lune(P[p_idx], P[q_idx], P[u_idx])) {
+      if (in_lune(p, P[q_idx], P[u_idx])) {
+        _found = false;
+        break;
+      }
+    }
+    if (_found) { E.push(q_idx); }
+  }
+  //
+  //---
+
+  return E;
+
+}
+
+function* _lune_network_3d_shrinking_fence(_point) {
+  let idir_descr = ["+x", "-x", "+y", "-y", "+z", "-z" ];
+  let _eps = 1 / (1024*1024*1024);
+
+  let n = _point.length;
+
+  let ctx = {
+    "dim": 3,
+    "start": [0,0,0],
+    "size": [1,1,1],
+    "point_grid_bp": [],
+    "grid_cell_size": [-1,-1,-1],
+    "bbox": [[0,0,0], [1,1,1]],
+    "grid": [],
+    "P": [],
+    "E": []
+  };
+
+  let s3 = Math.sqrt(3)/2;
+
+  // normaalized frustum vectors for each idir
+  //
+  // 0 : +x, 1 : -x
+  // 2 : +y, 3 : -y
+  // 4 : +z, 5 : -z
+  //
+  let frustum_v = [
+    [ [ s3, s3, s3 ], [ s3,-s3, s3 ], [ s3,-s3,-s3 ], [ s3, s3,-s3 ] ],
+    [ [-s3, s3, s3 ], [-s3, s3,-s3 ], [-s3,-s3,-s3 ], [-s3,-s3, s3 ] ],
+
+    [ [ s3, s3, s3 ], [ s3, s3,-s3 ], [-s3, s3,-s3 ], [-s3, s3, s3 ] ],
+    [ [ s3,-s3, s3 ], [-s3,-s3, s3 ], [-s3,-s3,-s3 ], [ s3,-s3,-s3 ] ],
+
+    [ [ s3, s3, s3 ], [-s3, s3, s3 ], [-s3,-s3, s3 ], [ s3,-s3, s3 ] ],
+    [ [ s3, s3,-s3 ], [ s3,-s3,-s3 ], [-s3,-s3,-s3 ], [-s3, s3,-s3 ] ]
+
+  ];
+
+  ctx["frustum_v"] = frustum_v;
+
+  // grid cell size
+  //
+  let grid_s = Math.cbrt(n);
+
+  // number of grid cells
+  //
+  let grid_n = Math.ceil(grid_s);
+
+  let ds = 1 / grid_n;
+
+  ctx.grid_cell_size[0] = ds;
+  ctx.grid_cell_size[1] = ds;
+  ctx.grid_cell_size[2] = ds;
+  ctx.grid_n = grid_n;
+  ctx.grid_s = grid_s;
+  ctx["ds"] = ds;
+
+  // init grid
+  //
+  for (let i=0; i<grid_n; i++) {
+    ctx.grid.push([]);
+    for (let j=0; j<grid_n; j++) {
+      ctx.grid[i].push([]);
+      for (let k=0; k<grid_n; k++) {
+        ctx.grid[i][j].push([]);
+      }
+    }
+  }
+
+  let grid_size  = [ 1, 1, 1 ];
+  let grid_start = [ 0,0, 0 ];
+  let grid_cell_size = [ ds, ds, ds ];
+
+  ctx.start = grid_start;
+  ctx.size = grid_size;
+
+  // initialize points, creating random ones if ncessary
+  //
+  for (let i=0; i<_point.length; i++) {
+    ctx.P.push(_point[i]);
+    ctx.point_grid_bp.push([-1,-1,-1]);
+  }
+
+  let P = ctx.P;
+  let E = [];
+
+  // setup linked list grid binning
+  //
+  for (let i=0; i<ctx.P.length; i++) {
+    let ix = Math.floor(ctx.P[i][0]*grid_n);
+    let iy = Math.floor(ctx.P[i][1]*grid_n);
+    let iz = Math.floor(ctx.P[i][2]*grid_n);
+    ctx.grid[iz][iy][ix].push(i);
+    ctx.point_grid_bp[i] = [ix,iy,iz];
+  }
+
+  for (let p_idx = 0; p_idx < ctx.P.length; p_idx++) {
+    let p = ctx.P[p_idx];
+
+    p_E = yield* _point_lune_network_3d_shrinking_fence(ctx, p, p_idx);
+
+    for (let i=0; i<p_E.length; i++) {
+      E.push([p_idx, p_E[i]]);
+    }
+  }
+
+  ctx.E = E;
+
+  return { "P": P, "E": E, "ctx": ctx };
+}
+
+// old (working?)
+//
+function* __lune_network_3d_shrinking_fence(n, B, _point) {
   _point = ((typeof _point === "undefined") ? [] : _point);
 
   let idir_descr = ["+x", "-x", "+y", "-y", "+z", "-z" ];
@@ -1337,7 +1709,7 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
       let frustum_box_r = l0 + (ds*ir);
 
       //---
-      // FANCE CHECK
+      // FENCE CHECK
       //
 
       // coarse fence
@@ -1382,7 +1754,7 @@ function* _lune_network_3d_shrinking_fence(n, B, _point) {
       if (fenced_in) { break; }
 
       //
-      // FANCE CHECK
+      // FENCE CHECK
       //---
 
 
@@ -4199,7 +4571,7 @@ function main_test3d_sf() {
 
     console.log("# fence start");
 
-    let info = lune_network_3d_shrinking_fence(N, [[0,0,0],[1,1,1]], _pnts);
+    let info = lune_network_3d_shrinking_fence(_pnts, [[0,0,0],[1,1,1]]);
 
     console.log("# fence done");
 
@@ -4379,9 +4751,9 @@ function cli_main() {
   //main_test2d();
   //main();
   //main_test3d();
-  //main_test3d_sf();
+  main_test3d_sf();
 
-  main_perf_test3d_sf();
+  //main_perf_test3d_sf();
 
   //fence_avg_deg_3d();
   //fence_dist_plot_3d();
