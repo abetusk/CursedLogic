@@ -6,6 +6,9 @@ Todo
   - highlight updated frame edges
   - consider displaying all q points in fence
 * check/confirm frame edge calculation done correctly
+* create sliver example
+  - test against other implementations
+* create other implementations
 
 done
 ---

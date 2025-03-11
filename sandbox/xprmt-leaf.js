@@ -7,6 +7,11 @@
 // work.  If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+// Libraries:
+// https://github.com/CorentinTh/quadtree-js (MIT)
+// halton.js (CC0)
+//
+
 // export for commonJS or browser
 //
 var qt;

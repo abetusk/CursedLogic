@@ -1386,6 +1386,9 @@ function* _point_lune_network_3d_shrinking_fence(ctx, p, p_idx) {
 
 }
 
+function lune_network_3d_init(_point) {
+}
+
 function* _lune_network_3d_shrinking_fence(_point) {
   let idir_descr = ["+x", "-x", "+y", "-y", "+z", "-z" ];
   let _eps = 1 / (1024*1024*1024);
@@ -4724,10 +4727,11 @@ function main() {
 
 
 function spotcheck() {
-  let N = 10000;
+  let N = 1000;
   let B = [[0,0,0], [1,1,1]];
   let pnt = poisson_point(N, 3);
-  let info = lune_network_3d_shrinking_fence(N, B, pnt);
+  //let info = lune_network_3d_shrinking_fence(N, B, pnt);
+  let info = lune_network_3d_shrinking_fence(pnt);
 
   //for (let i=0; i<pnt.length; i++) { console.log(pnt[i][0], pnt[i][1], pnt[i][2]); }
 
@@ -4745,7 +4749,8 @@ function spotcheck() {
 
 function cli_main() {
 
-  //spotcheck();
+  spotcheck();
+  process.exit();
   //process.exit();
 
   //main_test2d();
