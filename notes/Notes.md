@@ -36,3 +36,5 @@ Ideas
 * backlit moon phase (led)
 * morse code trainer
 * truchet pattern/multiscale cut box
+* private key metal card ([volution/punchcard-key-backup](https://github.com/volution/punchcard-key-backup))
+* [mystical\_ps](https://github.com/denismm/mystical_ps)
