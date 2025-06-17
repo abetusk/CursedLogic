@@ -29,6 +29,8 @@ Notes
 * free
   - small calendar
   - art cards (caleb? exquisite corpse? teranoptia?)
+  - magician wants to see sheet
+  - unix magic
 
 Ideas
 ---
@@ -38,3 +40,6 @@ Ideas
 * truchet pattern/multiscale cut box
 * private key metal card ([volution/punchcard-key-backup](https://github.com/volution/punchcard-key-backup))
 * [mystical\_ps](https://github.com/denismm/mystical_ps)
+* teenage engineering tp-7 knockoff
+* e-ink memo
+
