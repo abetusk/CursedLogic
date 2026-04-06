@@ -43,3 +43,6 @@ Ideas
 * teenage engineering tp-7 knockoff
 * e-ink memo
 * sierpinski gasket eye of providence ([gist](https://gist.github.com/stared/b8440943a1d72aed3033ea092a2a2902))
+* droste dante's inferno/paradise
+* knight's tour or hamiltonian cycle back of card (3d?)
+* lozenge packing back of card
