@@ -7,6 +7,7 @@ Notes
 * sentimentality
 * memories
 * algo nostro
+* zine of esoteric algorithms
 
 ---
 
