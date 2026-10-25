@@ -1,0 +1,2436 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Print Gallery Transform</title>
+<style>
+:root {
+  --bg:      #16181d;
+  --panel:   #1f2229;
+  --panel2:  #272b34;
+  --line:    #3a3f4b;
+  --text:    #e6e8ec;
+  --muted:   #9aa1ad;
+  --outer:   #36c5f0;
+  --inner:   #ff9f1c;
+  --fix:     #ff4d6d;
+  --hover:   #e056fd;
+  --arm:     #5dff8f;
+  --accent:  #4f8cff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 15px; margin: 0 12px 0 0; font-weight: 600; }
+button, select, input { font: inherit; color: var(--text); background: var(--panel2);
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 7px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: #2c4a8a; border-color: #3d63b8; }
+input[type=number] { width: 78px; }
+input[type=range] { width: 140px; vertical-align: middle; }
+.panes { display: flex; gap: 8px; padding: 8px; height: 62vh; min-height: 320px; }
+.pane { flex: 1 1 0; display: flex; flex-direction: column; min-width: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.pane-head { padding: 5px 9px; color: var(--muted); border-bottom: 1px solid var(--line); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.pane-head b { color: var(--text); }
+.pane canvas { flex: 1 1 auto; width: 100%; height: 100%; min-height: 0; display: block; touch-action: none; }
+.status { padding: 4px 9px; color: var(--muted); border-top: 1px solid var(--line); font-family: ui-monospace, monospace;
+  font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 24px; }
+.status .warn { color: #ffb347; }
+.controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; padding: 0 8px 12px; }
+fieldset { margin: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); padding: 6px 10px 10px; }
+legend { color: var(--muted); padding: 0 4px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 5px 0; }
+.row label { display: inline-flex; gap: 4px; align-items: center; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: middle; }
+pre#info { margin: 0; font: 12px/1.45 ui-monospace, monospace; white-space: pre-wrap; color: var(--text); }
+.hint { color: var(--muted); font-size: 12px; }
+#drop { position: fixed; inset: 0; background: rgba(79,140,255,0.18); border: 3px dashed var(--accent);
+  display: none; align-items: center; justify-content: center; font-size: 22px; pointer-events: none; z-index: 10; }
+.pane-tools { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 4px 8px;
+  border-bottom: 1px solid var(--line); }
+.seg { display: inline-flex; gap: 0; align-items: center; color: var(--muted); }
+.seg span { margin-right: 6px; }
+.seg button { border-radius: 0; }
+.seg button:first-of-type { border-radius: 4px 0 0 4px; }
+.seg button:last-of-type { border-radius: 0 4px 4px 0; }
+button.on { background: #2c4a8a; border-color: #3d63b8; }
+body.mode-spiral .rect-only { display: none !important; }
+body.mode-rect .sp-only { display: none !important; }
+#rec { color: #ff4d6d; font-weight: 600; display: none; }
+@media (max-width: 760px) {
+  .panes { flex-direction: column; height: auto; }
+  .pane { height: 46vh; flex: none; }
+}
+</style>
+</head>
+<body class="mode-rect">
+<header>
+  <h1>Print Gallery transform</h1>
+  <button id="b_load">Load image&hellip;</button>
+  <button id="b_builtin">Built-in test image</button>
+  <span class="hint">(or drop / paste an image)</span>
+  <span style="flex:1"></span>
+  <button id="b_png" class="primary">Download PNG</button>
+  <button id="b_json">Download metadata</button>
+  <button id="b_ljson">Load metadata&hellip;</button>
+  <button id="b_rec">Record loop (WebM)</button>
+  <span id="rec">&#9679; REC</span>
+  <input id="f_img" type="file" accept="image/*" hidden>
+  <input id="f_json" type="file" accept=".json,application/json" hidden>
+</header>
+
+<div class="panes">
+  <section class="pane">
+    <div class="pane-head"><b>Source</b> &mdash;
+      <span class="rect-only">
+      <span class="sw" style="background:var(--outer)"></span> picture boundary (drag edges/corners) &middot;
+      <span class="sw" style="background:var(--inner)"></span> inner frame where the picture repeats (drag to move, corners to scale, knob to rotate) &middot;
+      <span class="sw" style="background:var(--fix)"></span> fixed point &middot; wheel zooms, drag background pans</span>
+      <span class="sp-only">
+      drag any handle: <span class="sw" style="background:var(--fix)"></span> centre c &middot;
+      <span class="sw" style="background:var(--arm)"></span> A &rarr; A&prime; one step along the arm, dashed = spiral the transform expects &middot;
+      <span class="sw" style="background:var(--outer)"></span> boundary (drag vertices, double-click an edge to add, right-click a vertex to delete;
+      the square above it moves the whole boundary, the round knob turns and scales it about c, Shift = turn only, Alt = scale only) &middot;
+      <span class="sw" style="background:var(--inner)"></span> boundary after one step</span></div>
+    <div class="pane-tools">
+      <span class="seg"><span>region</span><button id="m_rect" class="on">rectangle</button><button id="m_sp">spiral</button></span>
+      <span class="seg"><span>view</span><button id="v_pic" class="on">picture</button><button id="v_lp">log-polar</button></span>
+      <span class="sp-only">
+        <button id="b_draw">Draw boundary</button>
+        <button id="b_circle">Circle boundary</button>
+        <span class="seg" title="Resample the boundary to this many vertices, evenly spaced in angle around the centre"><span>vertices</span><button id="b_vminus">&minus;</button><input id="i_nv" type="number" min="3" max="256" step="1" style="width:52px;border-radius:0"><button id="b_vplus">+</button></span></span>
+    </div>
+    <canvas id="cl"></canvas>
+    <div class="status" id="lstat"></div>
+  </section>
+  <section class="pane">
+    <div class="pane-head"><b>Transformed</b> &mdash; drag pans, wheel zooms, double-click resets &middot;
+      hover to see the matching source point (<span class="sw" style="background:var(--hover)"></span>) on the left</div>
+    <canvas id="cr"></canvas>
+    <div class="status" id="rstat"></div>
+  </section>
+</div>
+
+<div class="controls">
+  <fieldset class="sp-only">
+    <legend>Spiral calibration (image pixels)</legend>
+    <div class="row">
+      <label>centre x <input id="sp_cx" type="number" step="1"></label>
+      <label>y <input id="sp_cy" type="number" step="1"></label>
+    </div>
+    <div class="row">
+      <label>A x <input id="sp_ax" type="number" step="1"></label>
+      <label>y <input id="sp_ay" type="number" step="1"></label>
+    </div>
+    <div class="row">
+      <label>A&prime; x <input id="sp_bx" type="number" step="1"></label>
+      <label>y <input id="sp_by" type="number" step="1"></label>
+    </div>
+    <div class="row">
+      <label title="Whole turns around the centre between A and A' beyond the visible angle">extra turns A&rarr;A&prime; <input id="sp_turns" type="number" step="1" value="0"></label>
+    </div>
+    <div class="row">
+      <label title="Cross-fade width across the seam, as a fraction of one copy">seam blend <input id="r_feather" type="range" min="0" max="0.5" step="0.01" value="0.15"></label>
+    </div>
+    <div class="hint">A&prime; is the point that A lands on after one step (the same figure or shape, smaller, further in along the arm).
+      The step's angle is only known up to whole turns; if A&prime; is one full turn further along the arm, set extra turns to 1 (or -1 for the other direction).
+      In the log-polar view a true logarithmic spiral is a straight line, and the dashed green line should follow the painted arm.</div>
+  </fieldset>
+
+  <fieldset class="rect-only">
+    <legend>Inner frame (the copy of the picture)</legend>
+    <div class="row">
+      <label>centre x <input id="i_cx" type="number" step="1"></label>
+      <label>y <input id="i_cy" type="number" step="1"></label>
+    </div>
+    <div class="row">
+      <label title="Size of the picture divided by size of the inner frame">ratio r <input id="i_r" type="number" step="0.1" min="1.05"></label>
+      <label>rotation &deg; <input id="i_th" type="number" step="0.5"></label>
+    </div>
+    <div class="row">
+      <label title="Pixels with alpha below 0.5 show the next smaller copy behind them"><input id="c_alpha" type="checkbox"> transparent pixels show the next copy</label>
+    </div>
+  </fieldset>
+
+  <fieldset class="rect-only">
+    <legend>Picture boundary (crop, image pixels)</legend>
+    <div class="row">
+      <label>left <input id="o_x0" type="number" step="1"></label>
+      <label>top <input id="o_y0" type="number" step="1"></label>
+    </div>
+    <div class="row">
+      <label>right <input id="o_x1" type="number" step="1"></label>
+      <label>bottom <input id="o_y1" type="number" step="1"></label>
+      <button id="b_crop">Full image</button>
+    </div>
+    <div class="hint">The inner frame always has the shape of this boundary, scaled by 1/r and rotated.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Spiral</legend>
+    <div class="row">
+      <label><input id="c_escher" type="checkbox" checked> Escher spiral (off = plain nested copies)</label>
+    </div>
+    <div class="row">
+      <label title="How many turns around the centre make one full set of copies">turns n&#8321; <input id="i_n1" type="number" step="1" value="1"></label>
+      <label title="How many copies (levels) you pass in one turn; negative reverses the twist">copies per turn n&#8322; <input id="i_n2" type="number" step="1" value="1"></label>
+    </div>
+    <div class="row"><button id="b_flip">Reverse twist</button></div>
+    <div class="hint">Choices that keep the arm continuous (click to use). Pitch is the arm's angle away from a circle in the output:
+      0&deg; = concentric rings, 90&deg; = straight spokes. &times;N is how much larger each output copy is than the next.</div>
+    <div class="row" id="opts"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Output view</legend>
+    <div class="row">
+      <label>zoom <input id="r_zoom" type="range" min="-6" max="6" step="0.01" value="0"></label>
+      <span id="v_zoom" class="hint"></span>
+    </div>
+    <div class="row">
+      <label>rotate &deg; <input id="r_rot" type="range" min="-180" max="180" step="0.5" value="0"></label>
+      <span id="v_rot" class="hint"></span>
+    </div>
+    <div class="row"><button id="b_rview">Reset view</button></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Endless zoom animation</legend>
+    <div class="row">
+      <label><input id="c_anim" type="checkbox"> play</label>
+      <label title="Output repeats passed per second; negative zooms out">repeats / s <input id="i_speed" type="number" step="0.05" value="0.25"></label>
+    </div>
+    <div class="row">
+      <label>phase <input id="r_phase" type="range" min="0" max="1" step="0.001" value="0"></label>
+    </div>
+    <div class="row">
+      <label title="Number of output repeats in the recorded loop">record repeats <input id="i_rloops" type="number" step="1" min="1" value="1"></label>
+      <label>fps <input id="i_fps" type="number" step="1" min="5" max="60" value="30"></label>
+    </div>
+    <div class="hint">Zooming by one output repeat returns the same picture, so the WebM loops without a seam.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Rendering &amp; feedback</legend>
+    <div class="row">
+      <label>samples/px <select id="s_ss"><option value="1">1</option><option value="2" selected>4 (2&times;2)</option><option value="3">9 (3&times;3)</option><option value="4">16 (4&times;4)</option></select></label>
+      <label>resolution <select id="s_rs"><option value="0.5">50%</option><option value="0.75">75%</option><option value="1" selected>100%</option></select></label>
+    </div>
+    <div class="row">
+      <label title="Positive = blurrier, negative = sharper">sharpness <input id="r_lod" type="range" min="-2" max="2" step="0.1" value="0"></label>
+    </div>
+    <div class="row">
+      <label><input id="c_seams" type="checkbox"> show copy boundaries</label>
+      <label><input id="c_tint" type="checkbox"> tint alternate copies</label>
+    </div>
+    <div class="row">
+      <label><input id="c_lrec" type="checkbox"> draw the nested copies on the source</label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Export</legend>
+    <div class="row">
+      <label>size <select id="s_size">
+        <option value="x1">view &times;1</option>
+        <option value="x2" selected>view &times;2</option>
+        <option value="x4">view &times;4</option>
+        <option value="1920x1080">1920 &times; 1080</option>
+        <option value="3840x2160">3840 &times; 2160</option>
+        <option value="2048x2048">2048 &times; 2048</option>
+        <option value="4096x4096">4096 &times; 4096</option>
+        <option value="custom">custom</option>
+      </select></label>
+    </div>
+    <div class="row">
+      <label>w <input id="i_ew" type="number" value="2400" step="1"></label>
+      <label>h <input id="i_eh" type="number" value="1600" step="1"></label>
+    </div>
+    <div class="hint">Other aspect ratios keep the centre and the zoom (the shorter side is fixed).
+      The PNG uses the current sample count. Metadata holds every parameter and can be loaded back.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Numbers</legend>
+    <pre id="info"></pre>
+  </fieldset>
+</div>
+
+<div id="drop">Drop image</div>
+
+<script id="vs" type="x-shader/x-vertex">#version 300 es
+in vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+</script>
+
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+
+uniform sampler2D uTex;
+uniform vec2  uTexSize;
+uniform vec2  uRes;
+uniform float uScale;
+uniform vec2  uPan;
+uniform vec2  uRot;
+uniform vec4  uOuter;
+uniform vec2  uFix;
+uniform vec2  uS;
+uniform float uM;
+uniform vec2  uL;
+uniform vec2  uAlpha;
+uniform float uAlphaAbs;
+uniform vec2  uShift;
+uniform float uLogRmax;
+uniform int   uSS;
+uniform float uLodBias;
+uniform int   uSeams;
+uniform int   uTint;
+uniform int   uAlphaHoles;
+uniform vec3  uBg;
+uniform int   uMode;
+uniform sampler2D uG;
+uniform int   uGN;
+uniform float uFeather;
+
+out vec4 frag;
+
+vec2 cmul(vec2 a, vec2 b) { return vec2((a.x*b.x) - (a.y*b.y), (a.x*b.y) + (a.y*b.x)); }
+vec2 cdiv(vec2 a, vec2 b) { return vec2((a.x*b.x) + (a.y*b.y), (a.y*b.x) - (a.x*b.y)) / dot(b, b); }
+vec2 clog(vec2 a) { return vec2(log(length(a)), atan(a.y, a.x)); }
+vec2 cexp(vec2 a) { return exp(a.x) * vec2(cos(a.y), sin(a.y)); }
+
+bool inOuter(vec2 p) {
+  vec2 x = uFix + p;
+  return ( all(greaterThanEqual(x, uOuter.xy)) && all(lessThanEqual(x, uOuter.zw)) );
+}
+
+// Log of the distance from the fixed point to the boundary curve
+// along the ray at angle phi (spiral mode).  Stored at uGN angles,
+// linearly interpolated, periodic in phi.
+//
+float gAt(float phi) {
+  float x  = (((phi + 3.14159265) / 6.28318531) * float(uGN)) - 0.5;
+  float f  = floor(x);
+  int   i0 = int(mod(f, float(uGN)));
+  int   i1 = int(mod(f + 1.0, float(uGN)));
+  return mix(texelFetch(uG, ivec2(i0, 0), 0).r, texelFetch(uG, ivec2(i1, 0), 0).r, x - f);
+}
+
+// Inside the picture region: the rectangle (mode 0) or the
+// star-shaped boundary curve around the fixed point (mode 1).
+//
+bool inDom(vec2 p) {
+  if (uMode == 0) { return inOuter(p); }
+  return ( log(length(p)) <= gAt(atan(p.y, p.x)) );
+}
+
+// Signed distance (in image pixels) to the picture boundary,
+// positive inside.
+//
+float edgeDist(vec2 p) {
+  vec2 x = uFix + p;
+  vec2 d = min(x - uOuter.xy, uOuter.zw - x);
+  return min(d.x, d.y);
+}
+
+vec4 sampleP(vec2 p, float J) {
+  return textureLod(uTex, (uFix + p) / uTexSize, log2(max(J / float(uSS), 1e-8)) + uLodBias);
+}
+
+// One output sample at output pixel q (y down).
+//
+// z     : output plane coordinate
+// w     : log of the source offset from the fixed point, w = alpha*log(z) + const
+// k     : which copy (level) of the picture we are in
+// p     : offset from the fixed point inside that copy, in image pixels
+//
+vec3 shade(vec2 q) {
+  vec2 z = cmul(((q - (0.5*uRes)) / uScale) - uPan, uRot);
+  float zl = length(z);
+  if (zl < 1e-30) { return uBg; }
+
+  vec2 w = cmul(uAlpha, clog(z) + uShift) + vec2(uLogRmax, 0.0);
+
+  // Jump straight to roughly the right copy using the lattice
+  // vector L (one copy smaller = add L), then fix up against the
+  // actual region shape.
+  //
+  float k = floor((uLogRmax - w.x) / uL.x);
+  w += k*uL;
+  vec2 p = cexp(w);
+
+  for (int i = 0; i < 24; i++) {
+    if      (!inDom(p))          { p = cmul(p, uS); k -= 1.0; }
+    else if (inDom(cdiv(p, uS))) { p = cdiv(p, uS); k += 1.0; }
+    else                         { break; }
+  }
+  if (!inDom(p)) { return uBg; }
+
+  // Source pixels per output pixel, from |d/dz exp(alpha log z)| = |alpha| |u| / |z|.
+  // Used to pick the mipmap level so there are no seams from screen-space derivatives.
+  //
+  float J = (uAlphaAbs * length(p)) / (zl * uScale);
+
+  vec4 col = sampleP(p, J);
+
+  // Spiral mode seam hiding.  d1 is the log-distance to the boundary
+  // curve, d2 to its shrunken copy.  Across the curve the picture
+  // continues as the next larger copy, whose pixels here are at p*s
+  // (just inside the shrunken curve), and vice versa, so cross-fade
+  // to 50/50 exactly on the seam.
+  //
+  float d1 = 0.0, d2 = 0.0;
+  if (uMode == 1) {
+    float rho = log(length(p)), phi = atan(p.y, p.x);
+    d1 = gAt(phi) - rho;
+    d2 = (rho + uL.x) - gAt(phi + uL.y);
+    if (uFeather > 0.0) {
+      if      (d1 < uFeather) { col = mix(col, sampleP(cmul(p, uS), J*uM), 0.5*(1.0 - (d1/uFeather))); }
+      else if (d2 < uFeather) { col = mix(col, sampleP(cdiv(p, uS), J/uM), 0.5*(1.0 - (d2/uFeather))); }
+    }
+  }
+
+  if (uAlphaHoles == 1) {
+    for (int i = 0; i < 6; i++) {
+      if (col.a >= 0.5) { break; }
+      vec2 p2 = cdiv(p, uS);
+      if (!inDom(p2)) { break; }
+      p = p2; k += 1.0; J /= uM;
+      col = sampleP(p, J);
+    }
+  }
+
+  vec3 rgb = mix(uBg, col.rgb, col.a);
+
+  if (uTint == 1) {
+    float odd = mod(k, 2.0);
+    rgb = mix(rgb, ( odd > 0.5 ? vec3(0.2, 0.55, 1.0) : vec3(1.0, 0.6, 0.1) ), 0.22);
+  }
+
+  if (uSeams == 1) {
+    float dpx;
+    if (uMode == 0) { dpx = min(edgeDist(p), -edgeDist(cdiv(p, uS)) * uM) / J; }
+    else            { dpx = (min(d1, d2) * length(p)) / J; }
+    rgb = mix(rgb, vec3(1.0, 0.25, 0.45), 1.0 - smoothstep(0.6, 1.6, dpx));
+  }
+  return rgb;
+}
+
+void main() {
+  vec2 q0 = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y);
+  vec3 acc = vec3(0.0);
+  for (int j = 0; j < 4; j++) {
+    if (j >= uSS) { break; }
+    for (int i = 0; i < 4; i++) {
+      if (i >= uSS) { break; }
+      vec2 off = ((vec2(float(i), float(j)) + 0.5) / float(uSS)) - 0.5;
+      acc += shade(q0 + off);
+    }
+  }
+  frag = vec4(acc / float(uSS*uSS), 1.0);
+}
+</script>
+
+<script>
+"use strict";
+
+// Print Gallery (Droste / Escher) transform.
+//
+// Straight picture: the image repeats inside an inner frame.  The
+// similarity S(z) = c + (z-c)*s maps the picture boundary onto the
+// inner frame, c is its fixed point, s = m e^{i theta}, m = 1/r.
+// In log coordinates the straight picture is periodic under the
+// lattice  Z*2*pi*i + Z*L,  L = -log(s) = log(r) - i*theta.
+//
+// Escher's map (de Smit & Lenstra, Notices AMS 2003) sends the output
+// point z to the straight picture point  exp(alpha * log z),
+//   alpha = (n1*2*pi*i + n2*L) / (2*pi*i),
+// so one turn around the output centre moves n1 turns and n2 copies
+// in the straight picture.  With n1 = n2 = 1 and r = 256 this is
+// alpha = (2 pi i + log 256)/(2 pi i) from the paper.
+//
+// The output repeats under  z -> z * exp(L/alpha), which is what the
+// endless zoom animation and the WebM loop step through.
+//
+
+var TAU = 2*Math.PI;
+
+function cadd(a, b)   { return [ a[0] + b[0], a[1] + b[1] ]; }
+function csub(a, b)   { return [ a[0] - b[0], a[1] - b[1] ]; }
+function cscale(a, k) { return [ a[0]*k, a[1]*k ]; }
+function cmul(a, b)   { return [ (a[0]*b[0]) - (a[1]*b[1]), (a[0]*b[1]) + (a[1]*b[0]) ]; }
+function cdiv(a, b) {
+  var d = (b[0]*b[0]) + (b[1]*b[1]);
+  return [ ((a[0]*b[0]) + (a[1]*b[1]))/d, ((a[1]*b[0]) - (a[0]*b[1]))/d ];
+}
+function cabs(a) { return Math.hypot(a[0], a[1]); }
+function carg(a) { return Math.atan2(a[1], a[0]); }
+function clog(a) { return [ Math.log(cabs(a)), carg(a) ]; }
+function cexp(a) {
+  var e = Math.exp(a[0]);
+  return [ e*Math.cos(a[1]), e*Math.sin(a[1]) ];
+}
+function cis(t) { return [ Math.cos(t), Math.sin(t) ]; }
+
+function fmt(x, d) { return ( (d === undefined) ? x.toFixed(4) : x.toFixed(d) ); }
+function fmtc(a, d) {
+  var dd = ( (d === undefined) ? 4 : d );
+  return a[0].toFixed(dd) + ( (a[1] < 0) ? " - " : " + " ) + Math.abs(a[1]).toFixed(dd) + "i";
+}
+
+function $(id) { return document.getElementById(id); }
+
+var st = {
+  imgName : "built-in test image",
+  imgW    : 0,
+  imgH    : 0,
+
+  // "rect": region = rectangle, step from the orange inner frame.
+  // "spiral": region = polygon around a chosen centre, step from A -> A'.
+  //
+  mode  : "rect",
+  lview : "pic",
+
+  outer : { x0: 0, y0: 0, x1: 1, y1: 1 },
+  inner : { cx: 0, cy: 0, m: 0.25, theta: 0 },
+
+  sp      : null,
+  feather : 0.15,
+
+  escher : true,
+  n1     : 1,
+  n2     : 1,
+
+  view : { zoom: 1, px: 0, py: 0, rot: 0 },
+
+  anim  : false,
+  speed : 0.25,
+  t     : 0,
+
+  ss          : 2,
+  renderScale : 1,
+  lodBias     : 0,
+  seams       : false,
+  tint        : false,
+  alphaHoles  : false,
+  leftRec     : false
+};
+
+var srcCanvas = null;
+var hover     = null;
+var recording = null;
+
+//-----------------------------------------------------------------
+// Boundary curve as a radial function.
+//
+// For a polygon that every ray from the centre c crosses exactly
+// once, g(phi) = log(distance from c to the polygon along angle phi)
+// describes it completely.  Region test is then  log|p| <= g(arg p),
+// one lookup, which is what the shader uses in spiral mode.
+//-----------------------------------------------------------------
+
+var GN     = 2048;
+var radial = { key: "", g: new Float32Array(GN), ok: true, gmax: 0, uploaded: "" };
+
+function buildRadial(c, poly) {
+  var key = c[0].toFixed(3) + "," + c[1].toFixed(3) + "|" +
+            poly.map(function(q) { return q[0].toFixed(3) + "," + q[1].toFixed(3); }).join(";");
+  if (key === radial.key) { return radial; }
+
+  var ok = true, gmax = -Infinity, n = poly.length;
+  for (var j = 0; j < GN; j++) {
+    var phi = -Math.PI + (((j + 0.5)*TAU)/GN);
+    var d   = [ Math.cos(phi), Math.sin(phi) ];
+    var tmax = -1, cnt = 0;
+    for (var i = 0; i < n; i++) {
+      var a = poly[i], b = poly[(i + 1) % n];
+      var e = [ b[0] - a[0], b[1] - a[1] ],
+          w = [ a[0] - c[0], a[1] - c[1] ];
+      var den = (d[0]*e[1]) - (d[1]*e[0]);
+      if (Math.abs(den) < 1e-12) { continue; }
+      var t = ((w[0]*e[1]) - (w[1]*e[0]))/den,
+          u = ((w[0]*d[1]) - (w[1]*d[0]))/den;
+      if ( (t > 0) && (u >= 0) && (u < 1) ) { cnt++; tmax = Math.max(tmax, t); }
+    }
+    if (cnt !== 1) { ok = false; }
+    radial.g[j] = Math.log(Math.max(tmax, 1e-3));
+    gmax = Math.max(gmax, radial.g[j]);
+  }
+  radial.key  = key;
+  radial.ok   = ok;
+  radial.gmax = gmax;
+  return radial;
+}
+
+function gAt(phi) {
+  var x  = (((phi + Math.PI)/TAU)*GN) - 0.5;
+  var f  = Math.floor(x);
+  var i0 = ((f % GN) + GN) % GN,
+      i1 = (i0 + 1) % GN;
+  return radial.g[i0] + ((radial.g[i1] - radial.g[i0])*(x - f));
+}
+
+function circlePoly(c, R, n) {
+  var pts = [];
+  for (var i = 0; i < n; i++) { pts.push(cadd(c, cscale(cis((i*TAU)/n), R))); }
+  return pts;
+}
+
+//-----------------------------------------------------------------
+// Derived quantities.
+//-----------------------------------------------------------------
+
+function alphaFor(L) {
+  var alpha = [1, 0];
+  if (st.escher) {
+    alpha = [ ((TAU*st.n1) + (st.n2*L[1]))/TAU, -(st.n2*L[0])/TAU ];
+  }
+  if (cabs(alpha) < 1e-9) { alpha = [1, 0]; }
+  return alpha;
+}
+
+// Smallest output repeat.  The output is unchanged by w -> w + v for
+// every v in  alpha^-1 (Z 2 pi i + Z L);  pick the one with the
+// smallest nonzero zoom (real part), zooming in, and drop whole turns.
+// (L/alpha alone is n1 repeats, and a pure rotation when n1 = 0.)
+//
+function outPeriod(L, alpha) {
+  var best = null, bre = Infinity;
+  for (var a = -8; a <= 8; a++) {
+    for (var b = -8; b <= 8; b++) {
+      var v  = cdiv([ b*L[0], (a*TAU) + (b*L[1]) ], alpha);
+      var re = Math.abs(v[0]);
+      if ( (re > 1e-9) && (re < (bre - 1e-12)) ) { bre = re; best = ( (v[0] < 0) ? cscale(v, -1) : v ); }
+    }
+  }
+  if (!best) { best = cdiv(L, alpha); }
+  best[1] -= TAU*Math.round(best[1]/TAU);
+  return best;
+}
+
+// Angle of the arm away from a circle in the output, 0..90 degrees.
+// The arm runs along L in log coordinates, so along L/alpha in the output.
+//
+function armPitch(L, alpha) {
+  var d = cdiv(L, alpha);
+  return Math.atan2(Math.abs(d[0]), Math.abs(d[1]))*180/Math.PI;
+}
+
+function derive() {
+  return ( (st.mode === "spiral") ? deriveSpiral() : deriveRect() );
+}
+
+function deriveRect() {
+  var o   = st.outer,
+      inn = st.inner;
+
+  var s  = cscale(cis(inn.theta), inn.m),
+      CO = [ (o.x0 + o.x1)/2, (o.y0 + o.y1)/2 ],
+      CI = [ inn.cx, inn.cy ];
+
+  // Fixed point of z -> CI + (z - CO)*s.
+  //
+  var c = cdiv(csub(CI, cmul(s, CO)), csub([1, 0], s));
+  var L = [ -Math.log(inn.m), -inn.theta ];
+
+  var alpha = alphaFor(L),
+      delta = outPeriod(L, alpha),
+      gamma = cexp(delta);
+
+  var oc = [ [o.x0, o.y0], [o.x1, o.y0], [o.x1, o.y1], [o.x0, o.y1] ];
+  var Rmax = 0;
+  for (var i = 0; i < 4; i++) { Rmax = Math.max(Rmax, cabs(csub(oc[i], c))); }
+
+  var ic = oc.map(function(q) { return cadd(CI, cmul(csub(q, CO), s)); });
+
+  var fits = ic.every(function(q) {
+    return ( (q[0] >= (o.x0 - 0.5)) && (q[0] <= (o.x1 + 0.5)) &&
+             (q[1] >= (o.y0 - 0.5)) && (q[1] <= (o.y1 + 0.5)) );
+  });
+
+  buildRadial(c, oc);
+
+  return { s: s, m: inn.m, theta: inn.theta, CO: CO, CI: CI, c: c, L: L, alpha: alpha, delta: delta,
+           gamma: gamma, Rmax: Rmax, outerCorners: oc, innerCorners: ic, poly: oc, innerPoly: ic,
+           fits: fits, warn: ( fits ? "" : "inner frame sticks out of the picture boundary: parts of the copies will be missing" ) };
+}
+
+// Spiral mode: c is chosen directly, the step s takes the arm point A
+// to the matching point A' one copy further in, plus any whole turns.
+//
+function deriveSpiral() {
+  var sp = st.sp, c = sp.c;
+  var ls = clog(cdiv(csub(sp.A2, c), csub(sp.A, c)));
+  ls[1] += TAU*sp.turns;
+
+  // A' must be closer to c than A; if not, use the inverse step.
+  //
+  var swapped = false;
+  if (ls[0] > 0) { ls = [ -ls[0], -ls[1] ]; swapped = true; }
+  if (ls[0] > -0.01) { ls[0] = -0.01; }
+
+  var s = cexp(ls), L = [ -ls[0], -ls[1] ];
+
+  var alpha = alphaFor(L),
+      delta = outPeriod(L, alpha),
+      gamma = cexp(delta);
+
+  var R    = buildRadial(c, sp.poly);
+  var Rmax = Math.exp(R.gmax);
+  var ip   = sp.poly.map(function(q) { return cadd(c, cmul(csub(q, c), s)); });
+
+  var warn = "";
+  if (!R.ok) {
+    warn = "boundary must go once around the centre: every ray from the centre has to cross it exactly once";
+  }
+  else {
+    var nest = true;
+    for (var j = 0; j < GN; j += 4) {
+      var phi = -Math.PI + (((j + 0.5)*TAU)/GN);
+      if ((gAt(phi + L[1]) - L[0]) >= (radial.g[j] - 1e-4)) { nest = false; break; }
+    }
+    if (!nest) { warn = "the shrunken boundary (orange) crosses the boundary (cyan): copies will overlap"; }
+  }
+  var inImg = sp.poly.every(function(q) {
+    return ( (q[0] >= 0) && (q[1] >= 0) && (q[0] <= st.imgW) && (q[1] <= st.imgH) );
+  });
+  if (!inImg && !warn) { warn = "boundary leaves the image: those parts have no pixels"; }
+  if (swapped) { warn = ( warn ? (warn + "; ") : "" ) + "A' was further from the centre than A, so the step is reversed"; }
+
+  return { s: s, m: Math.exp(ls[0]), theta: ls[1], c: c, L: L, alpha: alpha, delta: delta, gamma: gamma,
+           Rmax: Rmax, poly: sp.poly, innerPoly: ip, fits: !warn, warn: warn, swapped: swapped };
+}
+
+function inOuter(p, D) {
+  var x = p[0] + D.c[0], y = p[1] + D.c[1], o = st.outer;
+  return ( (x >= o.x0) && (x <= o.x1) && (y >= o.y0) && (y <= o.y1) );
+}
+
+function inDom(p, D) {
+  if (st.mode !== "spiral") { return inOuter(p, D); }
+  return ( Math.log(cabs(p)) <= gAt(carg(p)) );
+}
+
+// JS mirror of the shader: output pixel -> source image point.
+//
+function mapOutput(qx, qy, W, H, D) {
+  var sc = st.view.zoom*0.5*Math.min(W, H);
+  var z  = cmul([ ((qx - (W/2))/sc) - st.view.px, ((qy - (H/2))/sc) - st.view.py ], cis(st.view.rot));
+  if (cabs(z) < 1e-30) { return null; }
+
+  var w = cadd(cmul(D.alpha, cadd(clog(z), cscale(D.delta, st.t - Math.floor(st.t)))), [ Math.log(D.Rmax), 0 ]);
+  var k = Math.floor((Math.log(D.Rmax) - w[0])/D.L[0]);
+  w = cadd(w, cscale(D.L, k));
+  var p = cexp(w);
+
+  for (var i = 0; i < 24; i++) {
+    if      (!inDom(p, D))            { p = cmul(p, D.s); k--; }
+    else if (inDom(cdiv(p, D.s), D))  { p = cdiv(p, D.s); k++; }
+    else                              { break; }
+  }
+  if (!inDom(p, D)) { return null; }
+  return { x: p[0] + D.c[0], y: p[1] + D.c[1], k: k };
+}
+
+//-----------------------------------------------------------------
+// WebGL.
+//-----------------------------------------------------------------
+
+var cr = $("cr"),
+    cl = $("cl");
+
+var gl = cr.getContext("webgl2", { antialias: false, preserveDrawingBuffer: false });
+if (!gl) {
+  document.body.innerHTML = "<p style='padding:20px'>This page needs WebGL2.</p>";
+  throw new Error("no webgl2");
+}
+
+function compile(type, src) {
+  var sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(sh));
+  }
+  return sh;
+}
+
+var prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER,   $("vs").textContent));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, $("fs").textContent));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { throw new Error(gl.getProgramInfoLog(prog)); }
+gl.useProgram(prog);
+
+var U = {};
+[ "uTex", "uTexSize", "uRes", "uScale", "uPan", "uRot", "uOuter", "uFix", "uS", "uM", "uL",
+  "uAlpha", "uAlphaAbs", "uShift", "uLogRmax", "uSS", "uLodBias", "uSeams", "uTint",
+  "uAlphaHoles", "uBg", "uMode", "uG", "uGN", "uFeather" ].forEach(function(n) { U[n] = gl.getUniformLocation(prog, n); });
+
+var vbo = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([ -1, -1, 3, -1, -1, 3 ]), gl.STATIC_DRAW);
+var aPos = gl.getAttribLocation(prog, "aPos");
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+var tex     = gl.createTexture();
+var MAX_TEX = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+var MAX_RB  = Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), MAX_TEX);
+
+function uploadTexture(cv) {
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+}
+
+// Radial boundary function g(phi), one float per angle.
+//
+var gTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, gTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, GN, 1, 0, gl.RED, gl.FLOAT, radial.g);
+
+function uploadRadial() {
+  if (radial.uploaded === radial.key) { return; }
+  gl.bindTexture(gl.TEXTURE_2D, gTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, GN, 1, gl.RED, gl.FLOAT, radial.g);
+  radial.uploaded = radial.key;
+}
+
+function setUniforms(W, H, D) {
+  var o = st.outer;
+  gl.useProgram(prog);
+  uploadRadial();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, gTex);
+  gl.uniform1i(U.uG, 1);
+  gl.uniform1i(U.uGN, GN);
+  gl.uniform1i(U.uMode, ( (st.mode === "spiral") ? 1 : 0 ));
+  gl.uniform1f(U.uFeather, st.feather*D.L[0]);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.uniform1i(U.uTex, 0);
+  gl.uniform2f(U.uTexSize, st.imgW, st.imgH);
+  gl.uniform2f(U.uRes, W, H);
+  gl.uniform1f(U.uScale, st.view.zoom*0.5*Math.min(W, H));
+  gl.uniform2f(U.uPan, st.view.px, st.view.py);
+  var r = cis(st.view.rot);
+  gl.uniform2f(U.uRot, r[0], r[1]);
+  gl.uniform4f(U.uOuter, o.x0, o.y0, o.x1, o.y1);
+  gl.uniform2f(U.uFix, D.c[0], D.c[1]);
+  gl.uniform2f(U.uS, D.s[0], D.s[1]);
+  gl.uniform1f(U.uM, D.m);
+  gl.uniform2f(U.uL, D.L[0], D.L[1]);
+  gl.uniform2f(U.uAlpha, D.alpha[0], D.alpha[1]);
+  gl.uniform1f(U.uAlphaAbs, cabs(D.alpha));
+
+  // The phase t only ever matters modulo one copy, so keep the
+  // shift small to save float precision.
+  //
+  var sh = cscale(D.delta, st.t - Math.floor(st.t));
+  gl.uniform2f(U.uShift, sh[0], sh[1]);
+  gl.uniform1f(U.uLogRmax, Math.log(D.Rmax));
+  gl.uniform1i(U.uSS, st.ss);
+  gl.uniform1f(U.uLodBias, st.lodBias);
+  gl.uniform1i(U.uSeams, ( st.seams ? 1 : 0 ));
+  gl.uniform1i(U.uTint, ( st.tint ? 1 : 0 ));
+  gl.uniform1i(U.uAlphaHoles, ( st.alphaHoles ? 1 : 0 ));
+  gl.uniform3f(U.uBg, 0.09, 0.094, 0.11);
+}
+
+function renderRight(D) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, cr.width, cr.height);
+  setUniforms(cr.width, cr.height, D);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// Offscreen render for export, in scissored tiles so a big image
+// at many samples per pixel does not stall the GPU in one draw.
+//
+function renderPixels(W, H) {
+  var D  = derive();
+  var ft = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, ft);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  var fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, ft, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.deleteFramebuffer(fb); gl.deleteTexture(ft);
+    throw new Error("could not create a " + W + "x" + H + " framebuffer");
+  }
+  gl.viewport(0, 0, W, H);
+  setUniforms(W, H, D);
+  gl.enable(gl.SCISSOR_TEST);
+  var T = 1024;
+  for (var ty = 0; ty < H; ty += T) {
+    for (var tx = 0; tx < W; tx += T) {
+      gl.scissor(tx, ty, Math.min(T, W - tx), Math.min(T, H - ty));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.finish();
+    }
+  }
+  gl.disable(gl.SCISSOR_TEST);
+
+  var px = new Uint8Array(W*H*4);
+  gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.deleteTexture(ft);
+
+  // GL rows run bottom-up.
+  //
+  var out = new ImageData(W, H), row = W*4;
+  for (var y = 0; y < H; y++) {
+    out.data.set(px.subarray((H - 1 - y)*row, (H - y)*row), y*row);
+  }
+  return out;
+}
+
+//-----------------------------------------------------------------
+// Left (source) canvas.
+//-----------------------------------------------------------------
+
+var lctx = cl.getContext("2d");
+var lv   = { sc: 1, ox: 0, oy: 0 };
+var lpg  = { c: [0, 0], rho0: 0, rho1: 1, x0: 0, y0: 0, w: 1, h: 1 };
+var dpr  = window.devicePixelRatio || 1;
+
+// Polygon being drawn (spiral mode) and the image point under the mouse.
+//
+var drawPts   = null;
+var cursorI   = null;
+var leftMsg   = "";
+
+function isLP() { return (st.lview === "lp"); }
+
+function lpX(phi) { return lpg.x0 + (((phi + Math.PI)/TAU)*lpg.w); }
+function lpY(rho) { return lpg.y0 + (((lpg.rho1 - rho)/(lpg.rho1 - lpg.rho0))*lpg.h); }
+
+// Image point <-> left-canvas point, in either the picture view or
+// the log-polar view (angle across, log distance from c up).
+//
+function toS(p) {
+  if (isLP()) {
+    var d = csub(p, lpg.c);
+    return [ lpX(carg(d)), lpY(Math.log(Math.max(cabs(d), 1e-9))) ];
+  }
+  return [ (p[0]*lv.sc) + lv.ox, (p[1]*lv.sc) + lv.oy ];
+}
+function toI(q) {
+  if (isLP()) {
+    var phi = (((q[0] - lpg.x0)/lpg.w)*TAU) - Math.PI,
+        rho = lpg.rho1 - (((q[1] - lpg.y0)/lpg.h)*(lpg.rho1 - lpg.rho0));
+    return cadd(lpg.c, cscale(cis(phi), Math.exp(rho)));
+  }
+  return [ (q[0] - lv.ox)/lv.sc, (q[1] - lv.oy)/lv.sc ];
+}
+
+function fitLeft() {
+  var W = cl.clientWidth, H = cl.clientHeight, pad = 16;
+  lv.sc = Math.min((W - (2*pad))/st.imgW, (H - (2*pad))/st.imgH);
+  lv.ox = (W - (st.imgW*lv.sc))/2;
+  lv.oy = (H - (st.imgH*lv.sc))/2;
+}
+
+// Log-polar range: from the farthest image corner down by a factor
+// e^5 (about 150).  Depends only on c and the image, so editing A, A'
+// or the boundary never rescales the view; frozen while dragging.
+//
+function lpGeom(D) {
+  if (drag) { return; }
+  var W = cl.clientWidth, H = cl.clientHeight, Rimg = 1;
+  [ [0, 0], [st.imgW, 0], [st.imgW, st.imgH], [0, st.imgH] ].forEach(function(q) {
+    Rimg = Math.max(Rimg, cabs(csub(q, D.c)));
+  });
+  var rho1 = Math.log(Rimg),
+      rho0 = Math.max(Math.log(0.5), rho1 - 5);
+  lpg = { c: D.c, rho0: rho0, rho1: rho1, x0: 40, y0: 8, w: Math.max(10, W - 48), h: Math.max(10, H - 30) };
+}
+
+// Small copy of the source pixels for building the log-polar view.
+//
+var smallSrc = null;
+var lpCache  = { key: "", cv: document.createElement("canvas") };
+
+function makeSmallSrc() {
+  var k  = Math.min(1, 2048/Math.max(st.imgW, st.imgH));
+  var cv = document.createElement("canvas");
+  cv.width  = Math.max(1, Math.round(st.imgW*k));
+  cv.height = Math.max(1, Math.round(st.imgH*k));
+  var g = cv.getContext("2d");
+  g.drawImage(srcCanvas, 0, 0, cv.width, cv.height);
+  smallSrc = { d: g.getImageData(0, 0, cv.width, cv.height).data, w: cv.width, h: cv.height, k: k };
+  lpCache.key = "";
+}
+
+function lpImage() {
+  var iw = Math.max(32, Math.min(720, Math.round(lpg.w))),
+      ih = Math.max(32, Math.min(540, Math.round(lpg.h)));
+  var key = [ lpg.c[0], lpg.c[1], lpg.rho0, lpg.rho1, iw, ih, st.imgName, st.imgW, st.imgH ].join(",");
+  if (key === lpCache.key) { return lpCache.cv; }
+
+  var cv = lpCache.cv, S = smallSrc;
+  cv.width = iw; cv.height = ih;
+  var g = cv.getContext("2d"), img = g.createImageData(iw, ih), out = img.data;
+  var cs = new Float32Array(iw), sn = new Float32Array(iw);
+  for (var x = 0; x < iw; x++) {
+    var phi = -Math.PI + (((x + 0.5)/iw)*TAU);
+    cs[x] = Math.cos(phi); sn[x] = Math.sin(phi);
+  }
+  var cx = lpg.c[0]*S.k, cy = lpg.c[1]*S.k;
+  for (var y = 0; y < ih; y++) {
+    var e = Math.exp(lpg.rho1 - (((y + 0.5)/ih)*(lpg.rho1 - lpg.rho0)))*S.k;
+    for (x = 0; x < iw; x++) {
+      var sx = Math.floor(cx + (e*cs[x])),
+          sy = Math.floor(cy + (e*sn[x])),
+          o  = ((y*iw) + x)*4;
+      if ( (sx >= 0) && (sy >= 0) && (sx < S.w) && (sy < S.h) ) {
+        var si = ((sy*S.w) + sx)*4;
+        out[o] = S.d[si]; out[o + 1] = S.d[si + 1]; out[o + 2] = S.d[si + 2]; out[o + 3] = 255;
+      }
+      else {
+        out[o] = 18; out[o + 1] = 20; out[o + 2] = 24; out[o + 3] = 255;
+      }
+    }
+  }
+  g.putImageData(img, 0, 0);
+  lpCache.key = key;
+  return cv;
+}
+
+function polyPath(g, pts) {
+  g.beginPath();
+  addPoly(g, pts);
+}
+
+function addPoly(g, pts) {
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (var i = 1; i < pts.length; i++) { g.lineTo(pts[i][0], pts[i][1]); }
+  g.closePath();
+}
+
+// Path through image points, drawn in the current view.  Edges are
+// subdivided in the log-polar view (straight edges become curves) and
+// the path is broken where it wraps from angle 180 to -180.
+//
+function tracePath(g, pts, closed, nPer) {
+  var seq = [], n = pts.length, m = ( closed ? n : (n - 1) );
+  var np  = ( isLP() ? nPer : 1 );
+  for (var i = 0; i < m; i++) {
+    var a = pts[i], b = pts[(i + 1) % n];
+    for (var j = 0; j < np; j++) {
+      var t = j/np;
+      seq.push(toS([ a[0] + ((b[0] - a[0])*t), a[1] + ((b[1] - a[1])*t) ]));
+    }
+  }
+  seq.push(toS( closed ? pts[0] : pts[n - 1] ));
+  var lim = ( isLP() ? (lpg.w/2) : Infinity );
+  g.beginPath();
+  for (var k = 0; k < seq.length; k++) {
+    if ( (k === 0) || (Math.abs(seq[k][0] - seq[k - 1][0]) > lim) ) { g.moveTo(seq[k][0], seq[k][1]); }
+    else                                                            { g.lineTo(seq[k][0], seq[k][1]); }
+  }
+}
+
+// Points of the logarithmic spiral through A that the step s maps
+// onto itself:  c + (A - c) exp(t log s).  This is the arm the
+// transform expects; it should run along the painted arm.
+//
+function armPoints(D) {
+  var sp = st.sp, ls = [ -D.L[0], -D.L[1] ];
+  var a0   = csub(sp.A, sp.c),
+      rhoA = Math.log(Math.max(cabs(a0), 1e-6));
+  var diag = Math.hypot(st.imgW, st.imgH);
+  var t0 = -(Math.log(2*diag) - rhoA)/D.L[0],
+      t1 = rhoA/D.L[0];
+  var dt = 0.05/Math.max(Math.abs(D.L[1]), 0.5, D.L[0]);
+  var n  = Math.min(8000, Math.ceil((t1 - t0)/dt));
+  dt = (t1 - t0)/n;
+  var pts = [];
+  for (var i = 0; i <= n; i++) {
+    pts.push(cadd(sp.c, cmul(a0, cexp(cscale(ls, t0 + (i*dt))))));
+  }
+  return pts;
+}
+
+function knobPos(D) {
+  var hO  = st.outer.y1 - st.outer.y0;
+  var top = toS(cadd(D.CI, cmul([0, -hO/2], D.s)));
+  var dir = cis(st.inner.theta - (Math.PI/2));
+  return { base: top, knob: [ top[0] + (dir[0]*28), top[1] + (dir[1]*28) ] };
+}
+
+function handles(D) {
+  var o = st.outer, hs = [];
+  D.innerCorners.forEach(function(p, i) { hs.push({ t: "iscale", i: i, p: toS(p) }); });
+  hs.push({ t: "irot", p: knobPos(D).knob });
+  var xm = (o.x0 + o.x1)/2, ym = (o.y0 + o.y1)/2;
+  [ [o.x0, o.y0, "x0y0"], [o.x1, o.y0, "x1y0"], [o.x1, o.y1, "x1y1"], [o.x0, o.y1, "x0y1"],
+    [xm, o.y0, "y0"], [o.x1, ym, "x1"], [xm, o.y1, "y1"], [o.x0, ym, "x0"] ].forEach(function(e) {
+    hs.push({ t: "outer", e: e[2], p: toS([e[0], e[1]]) });
+  });
+  return hs;
+}
+
+function squareHandle(g, p, col) {
+  g.fillStyle   = col;
+  g.strokeStyle = "#000";
+  g.lineWidth   = 1;
+  g.fillRect(p[0] - 4, p[1] - 4, 8, 8);
+  g.strokeRect(p[0] - 4, p[1] - 4, 8, 8);
+}
+
+// Whole-boundary handles (spiral mode, both views): a square above
+// the boundary's bounding box moves every vertex, a round knob at its
+// top-right corner turns and scales every vertex about the centre c.
+// In the log-polar view turning and scaling about c is a plain slide
+// (across = turn, up/down = scale).
+//
+function groupHandles() {
+  if (st.mode !== "spiral") { return null; }
+  var W = cl.clientWidth;
+  var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  st.sp.poly.forEach(function(q) {
+    var s = toS(q);
+    x0 = Math.min(x0, s[0]); y0 = Math.min(y0, s[1]);
+    x1 = Math.max(x1, s[0]); y1 = Math.max(y1, s[1]);
+  });
+  var kx = Math.min(x1 + 16, W - 10), ky = Math.max(y0 - 16, 10);
+  var knob = ( (drag && (drag.h.t === "gknob")) ? drag.qNow : [kx, ky] );
+  return { box: [x0, y0, x1, y1], move: [ (x0 + x1)/2, Math.max(y0 - 22, 10) ], knob: knob, corner: [x1, y0] };
+}
+
+function drawLeft() {
+  var W = cl.clientWidth, H = cl.clientHeight;
+  var g = lctx, D = derive();
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#121418";
+  g.fillRect(0, 0, W, H);
+  if (!srcCanvas) { return; }
+
+  if (isLP()) { lpGeom(D); drawLeftLP(g, D); }
+  else        { drawLeftPic(g, D); }
+  drawMarkers(g, D);
+}
+
+function drawLeftPic(g, D) {
+  var spiral = (st.mode === "spiral");
+
+  g.save();
+  g.translate(lv.ox, lv.oy);
+  g.scale(lv.sc, lv.sc);
+  g.imageSmoothingQuality = "high";
+  g.drawImage(srcCanvas, 0, 0);
+
+  // Optional straight (Droste) recursion: copy k is the picture
+  // region under S^k, drawn inside the shrunken region of copy k-1.
+  //
+  if (st.leftRec) {
+    var sk = [1, 0];
+    for (var k = 1; k <= 8; k++) {
+      sk = cmul(sk, D.s);
+      if ((cabs(sk)*D.Rmax*lv.sc) < 2) { break; }
+      g.save();
+      g.transform(sk[0], sk[1], -sk[1], sk[0],
+                  D.c[0] - (sk[0]*D.c[0]) + (sk[1]*D.c[1]),
+                  D.c[1] - (sk[1]*D.c[0]) - (sk[0]*D.c[1]));
+      polyPath(g, D.poly);
+      g.clip();
+      g.drawImage(srcCanvas, 0, 0);
+      g.restore();
+    }
+  }
+
+  // Dim everything outside the picture region.
+  //
+  g.beginPath();
+  g.rect(0, 0, st.imgW, st.imgH);
+  addPoly(g, D.poly);
+  g.fillStyle = "rgba(0,0,0,0.6)";
+  g.fill("evenodd");
+  g.restore();
+
+  // Hole tint (rectangle mode, only when the copies are not drawn in).
+  //
+  var ip = D.innerPoly.map(toS);
+  if ( !st.leftRec && !spiral ) {
+    polyPath(g, ip);
+    g.fillStyle = "rgba(255,159,28,0.20)";
+    g.fill();
+  }
+
+  // Further nested copies of the boundary, faint and dashed.
+  //
+  var pts = D.innerPoly, skk = D.s;
+  g.setLineDash([4, 4]);
+  g.lineWidth = 1;
+  for (var j = 2; j <= 7; j++) {
+    pts = pts.map(function(q) { return cadd(D.c, cmul(csub(q, D.c), D.s)); });
+    skk = cmul(skk, D.s);
+    if ((cabs(skk)*D.Rmax*lv.sc) < 3) { break; }
+    polyPath(g, pts.map(toS));
+    g.strokeStyle = "rgba(255,159,28," + (0.75 - (j*0.08)) + ")";
+    g.stroke();
+  }
+  g.setLineDash([]);
+
+  // Picture boundary.
+  //
+  polyPath(g, D.poly.map(toS));
+  g.lineWidth   = 2;
+  g.strokeStyle = getCss("--outer");
+  g.stroke();
+
+  // Shrunken boundary (the inner frame in rectangle mode).
+  //
+  polyPath(g, ip);
+  g.lineWidth   = 2;
+  g.strokeStyle = ( D.fits ? getCss("--inner") : "#ff3b3b" );
+  g.stroke();
+
+  if (spiral) {
+    st.sp.poly.forEach(function(q) { squareHandle(g, toS(q), getCss("--outer")); });
+    return;
+  }
+
+  var kp = knobPos(D);
+  g.beginPath();
+  g.moveTo(kp.base[0], kp.base[1]);
+  g.lineTo(kp.knob[0], kp.knob[1]);
+  g.stroke();
+  g.beginPath();
+  g.arc(kp.knob[0], kp.knob[1], 6, 0, TAU);
+  g.fillStyle = getCss("--inner");
+  g.fill();
+
+  handles(D).forEach(function(h) {
+    if (h.t === "irot") { return; }
+    squareHandle(g, h.p, ( (h.t === "outer") ? getCss("--outer") : getCss("--inner") ));
+  });
+}
+
+// Log-polar view.  A logarithmic spiral is a straight line here, the
+// picture region is everything below the cyan curve, and one copy is
+// the band between the cyan and orange curves.
+//
+function drawLeftLP(g, D) {
+  var x0 = lpg.x0, y0 = lpg.y0, w = lpg.w, h = lpg.h;
+  g.imageSmoothingEnabled = true;
+  g.drawImage(lpImage(), x0, y0, w, h);
+
+  g.save();
+  g.beginPath();
+  g.rect(x0, y0, w, h);
+  g.clip();
+
+  var NS = 720;
+  function curve(f) {
+    var pts = [];
+    for (var i = 0; i <= NS; i++) {
+      var phi = -Math.PI + ((i*TAU)/NS);
+      pts.push([ lpX(phi), lpY(f(phi)) ]);
+    }
+    return pts;
+  }
+  function strokeCurve(pts, col, dash, lw) {
+    g.beginPath();
+    pts.forEach(function(q, i) { if (i === 0) { g.moveTo(q[0], q[1]); } else { g.lineTo(q[0], q[1]); } });
+    g.setLineDash(dash);
+    g.strokeStyle = col;
+    g.lineWidth   = lw;
+    g.stroke();
+    g.setLineDash([]);
+  }
+
+  var top = curve(function(phi) { return gAt(phi); }),
+      bot = curve(function(phi) { return gAt(phi + D.L[1]) - D.L[0]; });
+
+  g.beginPath();
+  g.moveTo(x0, y0 - 2);
+  top.forEach(function(q) { g.lineTo(q[0], q[1]); });
+  g.lineTo(x0 + w, y0 - 2);
+  g.closePath();
+  g.fillStyle = "rgba(0,0,0,0.6)";
+  g.fill();
+
+  g.beginPath();
+  g.moveTo(x0, y0 + h + 2);
+  bot.forEach(function(q) { g.lineTo(q[0], q[1]); });
+  g.lineTo(x0 + w, y0 + h + 2);
+  g.closePath();
+  g.fillStyle = "rgba(255,159,28,0.12)";
+  g.fill();
+
+  for (var k = 2; k <= 6; k++) {
+    strokeCurve(curve(function(phi) { return gAt(phi + (k*D.L[1])) - (k*D.L[0]); }),
+                "rgba(255,159,28," + (0.75 - (k*0.08)) + ")", [4, 4], 1);
+  }
+  strokeCurve(bot, ( D.fits ? getCss("--inner") : "#ff3b3b" ), [], 2);
+  strokeCurve(top, getCss("--outer"), [], 2);
+  g.restore();
+
+  if (st.mode === "spiral") {
+    st.sp.poly.forEach(function(q) { squareHandle(g, toS(q), getCss("--outer")); });
+  }
+
+  // Axes.
+  //
+  g.fillStyle = "#9aa1ad";
+  g.font = "11px system-ui, sans-serif";
+  g.textAlign = "center";
+  [ [-180, "-180°"], [-90, "-90°"], [0, "0° (right of centre)"], [90, "90° (below)"], [180, "180°"] ].forEach(function(t) {
+    g.fillText(t[1], lpX(t[0]*Math.PI/180), y0 + h + 14);
+  });
+  g.save();
+  g.translate(14, y0 + (h/2));
+  g.rotate(-Math.PI/2);
+  g.fillText("log distance from centre (up = farther)", 0, 0);
+  g.restore();
+  g.textAlign = "left";
+}
+
+function drawGroupHandles(g) {
+  var gh = groupHandles(), bx = gh.box;
+  g.setLineDash([3, 4]);
+  g.strokeStyle = "rgba(54,197,240,0.55)";
+  g.lineWidth   = 1;
+  g.strokeRect(bx[0], bx[1], bx[2] - bx[0], bx[3] - bx[1]);
+  g.setLineDash([]);
+
+  g.beginPath();
+  g.moveTo(gh.corner[0], gh.corner[1]);
+  g.lineTo(gh.knob[0], gh.knob[1]);
+  g.moveTo(gh.move[0], bx[1]);
+  g.lineTo(gh.move[0], gh.move[1] + 7);
+  g.strokeStyle = getCss("--outer");
+  g.lineWidth   = 1.5;
+  g.stroke();
+
+  g.fillStyle   = getCss("--outer");
+  g.strokeStyle = "#000";
+  g.fillRect(gh.move[0] - 7, gh.move[1] - 7, 14, 14);
+  g.strokeRect(gh.move[0] - 7, gh.move[1] - 7, 14, 14);
+  g.beginPath();
+  g.moveTo(gh.move[0] - 4, gh.move[1]); g.lineTo(gh.move[0] + 4, gh.move[1]);
+  g.moveTo(gh.move[0], gh.move[1] - 4); g.lineTo(gh.move[0], gh.move[1] + 4);
+  g.stroke();
+
+  g.beginPath();
+  g.arc(gh.knob[0], gh.knob[1], 7, 0, TAU);
+  g.fill();
+  g.stroke();
+}
+
+// Every grabbable handle in spiral mode with its screen position;
+// the nearest one within reach is picked, whatever its kind.
+//
+function spiralHandles() {
+  var sp = st.sp, hs = [];
+  if (!isLP()) { hs.push({ t: "c", p: toS(sp.c) }); }
+  hs.push({ t: "A", p: toS(sp.A) });
+  hs.push({ t: "A2", p: toS(sp.A2) });
+  sp.poly.forEach(function(q, i) { hs.push({ t: "pv", i: i, p: toS(q) }); });
+  var gh = groupHandles();
+  hs.push({ t: "gmove", p: gh.move });
+  hs.push({ t: "gknob", p: gh.knob });
+  return hs;
+}
+
+var hoverH = null;
+
+function drawMarkers(g, D) {
+  if (st.mode === "spiral") {
+    var sp = st.sp;
+    tracePath(g, armPoints(D), false, 1);
+    g.setLineDash([6, 5]);
+    g.strokeStyle = getCss("--arm");
+    g.lineWidth   = 2;
+    g.stroke();
+    g.setLineDash([]);
+
+    var a = toS(sp.A), b = toS(sp.A2);
+    g.fillStyle   = getCss("--arm");
+    g.strokeStyle = "#000";
+    g.lineWidth   = 1.5;
+    g.beginPath(); g.arc(a[0], a[1], 7, 0, TAU); g.fill(); g.stroke();
+    g.strokeStyle = getCss("--arm");
+    g.lineWidth   = 3;
+    g.beginPath(); g.arc(b[0], b[1], 7, 0, TAU); g.stroke();
+    g.font = "bold 13px system-ui, sans-serif";
+    g.fillStyle = getCss("--arm");
+    g.fillText("A", a[0] + 10, a[1] - 8);
+    g.fillText("A′", b[0] + 10, b[1] - 8);
+  }
+
+  if (!isLP()) {
+    var f = toS(D.c);
+    g.strokeStyle = getCss("--fix");
+    g.lineWidth   = 2;
+    g.beginPath();
+    g.arc(f[0], f[1], 7, 0, TAU);
+    g.moveTo(f[0] - 11, f[1]); g.lineTo(f[0] + 11, f[1]);
+    g.moveTo(f[0], f[1] - 11); g.lineTo(f[0], f[1] + 11);
+    g.stroke();
+  }
+
+  if (st.mode === "spiral") { drawGroupHandles(g); }
+
+  // Ring around the handle that a press would grab.
+  //
+  if ( hoverH && !drag && (st.mode === "spiral") ) {
+    g.strokeStyle = "#fff";
+    g.lineWidth   = 2;
+    g.beginPath();
+    g.arc(hoverH.p[0], hoverH.p[1], 12, 0, TAU);
+    g.stroke();
+  }
+
+  // Polygon being drawn.
+  //
+  if (drawPts && drawPts.length) {
+    var pts = drawPts.concat( cursorI ? [cursorI] : [] );
+    if (pts.length >= 2) {
+      tracePath(g, pts, false, 24);
+      g.strokeStyle = getCss("--outer");
+      g.lineWidth   = 2;
+      g.stroke();
+    }
+    drawPts.forEach(function(q, i) {
+      var s = toS(q);
+      g.fillStyle = ( (i === 0) ? "#fff" : getCss("--outer") );
+      g.beginPath(); g.arc(s[0], s[1], ( (i === 0) ? 6 : 4 ), 0, TAU); g.fill();
+    });
+  }
+
+  // Point under the cursor on the right.
+  //
+  if (hover && isFinite(hover.x)) {
+    var hp = toS([hover.x, hover.y]);
+    g.strokeStyle = getCss("--hover");
+    g.lineWidth   = 2;
+    g.beginPath();
+    g.arc(hp[0], hp[1], 9, 0, TAU);
+    g.moveTo(hp[0] - 16, hp[1]); g.lineTo(hp[0] - 4, hp[1]);
+    g.moveTo(hp[0] + 4, hp[1]);  g.lineTo(hp[0] + 16, hp[1]);
+    g.moveTo(hp[0], hp[1] - 16); g.lineTo(hp[0], hp[1] - 4);
+    g.moveTo(hp[0], hp[1] + 4);  g.lineTo(hp[0], hp[1] + 16);
+    g.stroke();
+  }
+}
+
+var cssCache = {};
+function getCss(n) {
+  if (!(n in cssCache)) { cssCache[n] = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  return cssCache[n];
+}
+
+//-----------------------------------------------------------------
+// Info panel and inputs.
+//-----------------------------------------------------------------
+
+function updateInfo(D) {
+  var r = 1/D.m, deg = D.theta*180/Math.PI;
+  var head =
+    "image         " + st.imgName + "  (" + st.imgW + " x " + st.imgH + ")\n" +
+    "region        " + ( (st.mode === "spiral") ? ("spiral, boundary with " + st.sp.poly.length + " vertices") : "rectangle" ) + "\n" +
+    "step s        shrink by r = " + fmt(r) + ", rotate " + fmt(deg, 2) + " deg\n" +
+    "centre c      (" + fmt(D.c[0], 2) + ", " + fmt(D.c[1], 2) + ")\n";
+  var txt = head +
+    "lattice L     " + fmtc(D.L) + "   (= log r - i theta)\n" +
+    "alpha         " + fmtc(D.alpha) + "\n" +
+    "|alpha|       " + fmt(cabs(D.alpha)) + "   arg " + fmt(carg(D.alpha)*180/Math.PI, 3) + " deg\n" +
+    "output repeat z -> gamma z  (smallest one)\n" +
+    "  |gamma|     " + fmt(cabs(D.gamma)) + "   arg " + fmt(carg(D.gamma)*180/Math.PI, 3) + " deg\n" +
+    "  (Escher r=256: |gamma| = 22.58, arg = 157.6 deg)";
+  if (st.mode === "spiral") {
+    txt += "\narm in output  pitch " + fmt(armPitch(D.L, D.alpha), 2) +
+           " deg from a circle (0 = rings, 90 = spokes)";
+  }
+  $("info").textContent = txt;
+  updateOptions(D);
+
+  var ws = ( D.warn ? ("  <span class='warn'>" + D.warn + "</span>") : "" );
+  $("lstat").innerHTML = ( leftMsg ? ("<span class='warn'>" + leftMsg + "</span>  ") : "" ) +
+    "r = " + fmt(r, 3) + "  rotation = " + fmt(deg, 2) + " deg  c = (" + fmt(D.c[0], 1) + ", " + fmt(D.c[1], 1) + ")" + ws;
+}
+
+// Clickable list of integer (n1, n2) choices with the arm pitch and
+// copy-to-copy zoom each one gives in the output.
+//
+var optsKey = "";
+function updateOptions(D) {
+  var key = D.L[0].toFixed(4) + "," + D.L[1].toFixed(4) + "," + st.n1 + "," + st.n2 + "," + st.escher;
+  if (key === optsKey) { return; }
+  optsKey = key;
+
+  var list = [];
+  // (-n1, -n2) gives the same picture turned inside out, so only n2 > 0.
+  //
+  [ 1, 2 ].forEach(function(n2) {
+    for (var n1 = -3; n1 <= 4; n1++) {
+      var al = [ ((TAU*n1) + (n2*D.L[1]))/TAU, -(n2*D.L[0])/TAU ];
+      if (cabs(al) < 1e-6) { continue; }
+      var zoom = Math.exp(outPeriod(D.L, al)[0]);
+      if ( (zoom < 1.2) || (zoom > 1e4) ) { continue; }
+      list.push({ n1: n1, n2: n2, pitch: armPitch(D.L, al), zoom: zoom });
+    }
+  });
+  list.sort(function(a, b) { return ( (a.pitch - b.pitch) || (Math.abs(a.n2) - Math.abs(b.n2)) ); });
+  list = list.slice(0, 10);
+
+  var el = $("opts");
+  el.innerHTML = "";
+  list.forEach(function(o) {
+    var b = document.createElement("button");
+    var label = ( (o.pitch < 0.5) ? "rings" : ( (o.pitch > 89.5) ? "spokes" : ("pitch " + o.pitch.toFixed(0) + "\u00b0") ) );
+    b.textContent = "(" + o.n1 + ", " + o.n2 + ") " + label + " \u00d7" + ( (o.zoom < 100) ? o.zoom.toFixed(1) : o.zoom.toFixed(0) );
+    if ( st.escher && (o.n1 === st.n1) && (o.n2 === st.n2) ) { b.className = "on"; }
+    b.addEventListener("click", function() { st.n1 = o.n1; st.n2 = o.n2; st.escher = true; invalidate(); });
+    el.appendChild(b);
+  });
+  if (!list.length) { el.textContent = "(none with a usable zoom)"; }
+}
+
+function setIf(id, v) {
+  var el = $(id);
+  if (document.activeElement !== el) { el.value = v; }
+}
+
+function syncInputs() {
+  setIf("i_cx", st.inner.cx.toFixed(1));
+  setIf("i_cy", st.inner.cy.toFixed(1));
+  setIf("i_r",  (1/st.inner.m).toFixed(4));
+  setIf("i_th", (st.inner.theta*180/Math.PI).toFixed(2));
+  setIf("o_x0", Math.round(st.outer.x0));
+  setIf("o_y0", Math.round(st.outer.y0));
+  setIf("o_x1", Math.round(st.outer.x1));
+  setIf("o_y1", Math.round(st.outer.y1));
+  setIf("i_n1", st.n1);
+  setIf("i_n2", st.n2);
+  setIf("r_zoom", Math.log2(st.view.zoom).toFixed(2));
+  setIf("r_rot",  (st.view.rot*180/Math.PI).toFixed(1));
+  setIf("r_phase", (st.t - Math.floor(st.t)).toFixed(3));
+  $("v_zoom").textContent = "x" + st.view.zoom.toPrecision(3);
+  $("v_rot").textContent  = (st.view.rot*180/Math.PI).toFixed(1) + " deg";
+  $("c_escher").checked = st.escher;
+  $("c_anim").checked   = st.anim;
+  $("c_seams").checked  = st.seams;
+  $("c_tint").checked   = st.tint;
+  $("c_alpha").checked  = st.alphaHoles;
+  $("c_lrec").checked   = st.leftRec;
+  setIf("i_speed", st.speed);
+  $("s_ss").value = String(st.ss);
+  $("s_rs").value = String(st.renderScale);
+  setIf("r_lod", st.lodBias);
+
+  document.body.classList.toggle("mode-spiral", st.mode === "spiral");
+  document.body.classList.toggle("mode-rect", st.mode !== "spiral");
+  $("m_rect").classList.toggle("on", st.mode !== "spiral");
+  $("m_sp").classList.toggle("on", st.mode === "spiral");
+  $("v_pic").classList.toggle("on", !isLP());
+  $("v_lp").classList.toggle("on", isLP());
+  setIf("r_feather", st.feather);
+  if (st.sp) {
+    setIf("sp_cx", st.sp.c[0].toFixed(1));  setIf("sp_cy", st.sp.c[1].toFixed(1));
+    setIf("sp_ax", st.sp.A[0].toFixed(1));  setIf("sp_ay", st.sp.A[1].toFixed(1));
+    setIf("sp_bx", st.sp.A2[0].toFixed(1)); setIf("sp_by", st.sp.A2[1].toFixed(1));
+    setIf("sp_turns", st.sp.turns);
+    setIf("i_nv", st.sp.poly.length);
+  }
+}
+
+//-----------------------------------------------------------------
+// Frame loop.
+//-----------------------------------------------------------------
+
+var dirty = true, lastT = null;
+
+function invalidate() { dirty = true; }
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  var wl = Math.max(1, Math.round(cl.clientWidth*dpr)),
+      hl = Math.max(1, Math.round(cl.clientHeight*dpr));
+  if ((cl.width !== wl) || (cl.height !== hl)) { cl.width = wl; cl.height = hl; }
+  var rs = dpr*st.renderScale;
+  var wr = Math.max(1, Math.round(cr.clientWidth*rs)),
+      hr = Math.max(1, Math.round(cr.clientHeight*rs));
+  if ((cr.width !== wr) || (cr.height !== hr)) { cr.width = wr; cr.height = hr; }
+  invalidate();
+}
+
+function frame(ts) {
+  if (lastT === null) { lastT = ts; }
+  var dt = Math.min(0.1, (ts - lastT)/1000);
+  lastT = ts;
+
+  if (recording) {
+    var el = (ts - recording.t0)/1000;
+    st.t = recording.phase0 + (el*recording.dir/recording.secPerCopy);
+    if (el >= recording.dur) { stopRecording(); }
+    dirty = true;
+  }
+  else if (st.anim) {
+    st.t += dt*st.speed;
+    st.t -= Math.floor(st.t);
+    dirty = true;
+  }
+
+  if (dirty && srcCanvas) { renderNow(); }
+  requestAnimationFrame(frame);
+}
+
+function renderNow() {
+  dirty = false;
+  var D = derive();
+  if (hover && hover.q) {
+    var h = mapOutput(hover.q[0], hover.q[1], cr.width, cr.height, D);
+    hover = ( h ? { x: h.x, y: h.y, k: h.k, q: hover.q } : { x: NaN, y: NaN, q: hover.q } );
+    rstatHover(h);
+  }
+  else { rstatHover(null); }
+  renderRight(D);
+  drawLeft();
+  updateInfo(D);
+  syncInputs();
+}
+
+function rstatHover(h) {
+  var D = derive();
+  var base = "alpha = " + fmtc(D.alpha, 3) + "  output repeats every x" + fmt(cabs(D.gamma), 3) +
+             " / " + fmt(carg(D.gamma)*180/Math.PI, 1) + " deg";
+  var gz = Math.abs(Math.log(cabs(D.gamma)));
+  if ( (gz > Math.log(1e4)) || (gz < 0.05) ) {
+    base += "  (copies are " + ( (gz > 1) ? "very far apart" : "almost the same size" ) + ": pick another (n1, n2) under Spiral)";
+  }
+  if (h) {
+    base = "source (" + h.x.toFixed(1) + ", " + h.y.toFixed(1) + ")  copy level " + h.k + "   " + base;
+  }
+  $("rstat").textContent = base;
+}
+
+//-----------------------------------------------------------------
+// Image loading.
+//-----------------------------------------------------------------
+
+function setImage(source, name) {
+  var w = source.width, h = source.height;
+  var lim = Math.min(MAX_TEX, 8192);
+  var k = Math.min(1, lim/Math.max(w, h));
+  var cv = document.createElement("canvas");
+  cv.width  = Math.max(1, Math.round(w*k));
+  cv.height = Math.max(1, Math.round(h*k));
+  var g = cv.getContext("2d");
+  g.imageSmoothingQuality = "high";
+  g.drawImage(source, 0, 0, cv.width, cv.height);
+
+  srcCanvas = cv;
+  st.imgName = name + ( (k < 1) ? " (scaled to fit GPU)" : "" );
+  st.imgW    = cv.width;
+  st.imgH    = cv.height;
+  st.outer   = { x0: 0, y0: 0, x1: cv.width, y1: cv.height };
+  uploadTexture(cv);
+  makeSmallSrc();
+  fitLeft();
+  st.sp = null;
+}
+
+// Spiral-mode starting point: same centre and step as the current
+// rectangle setup, A to the right of the centre, a circular boundary.
+//
+function spiralFromRect() {
+  var D  = deriveRect(), c = D.c;
+  var R0 = Math.max(20, Math.min(c[0], c[1], st.imgW - c[0], st.imgH - c[1]));
+  var A  = cadd(c, [ 0.6*R0, 0 ]);
+  return { c: c, A: A, A2: cadd(c, cmul(csub(A, c), D.s)), turns: 0, poly: circlePoly(c, 0.92*R0, 32) };
+}
+
+function setMode(m) {
+  if ( (m === "spiral") && !st.sp ) { st.sp = spiralFromRect(); }
+  st.mode = m;
+  drawPts = null; leftMsg = "";
+  invalidate();
+}
+
+function defaultFrame() {
+  var o = st.outer;
+  st.inner = { cx: o.x0 + ((o.x1 - o.x0)*0.62), cy: o.y0 + ((o.y1 - o.y0)*0.45), m: 0.25, theta: 0 };
+}
+
+function resetView() {
+  st.view = { zoom: 1, px: 0, py: 0, rot: 0 };
+  invalidate();
+}
+
+function loadBuiltin() {
+  setImage(makeTestImage(), "built-in test image");
+  st.inner = { cx: 1080, cy: 420, m: 0.25, theta: 0 };
+  if (st.mode === "spiral") { st.sp = spiralFromRect(); }
+  resetView();
+}
+
+function loadFile(file) {
+  if (!file || !/^image\//.test(file.type)) { return; }
+  var url = URL.createObjectURL(file);
+  var im  = new Image();
+  im.onload = function() {
+    setImage(im, file.name);
+    defaultFrame();
+    if (st.mode === "spiral") { st.sp = spiralFromRect(); }
+    resetView();
+    URL.revokeObjectURL(url);
+  };
+  im.onerror = function() { alert("Could not read that image."); URL.revokeObjectURL(url); };
+  im.src = url;
+}
+
+// A gallery-ish test picture with a frame whose inside is the copy.
+// Its frame interior is 400 x 250 at (880, 295), i.e. r = 4.
+//
+function makeTestImage() {
+  var W = 1600, H = 1000;
+  var cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  var g = cv.getContext("2d");
+
+  var grd = g.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, "#f4e6c8");
+  grd.addColorStop(1, "#d6b17c");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, W, H);
+
+  for (var x = 0; x < W; x += 40) {
+    g.fillStyle = ( ((x/40) % 2) ? "rgba(140,80,30,0.10)" : "rgba(255,255,255,0.10)" );
+    g.fillRect(x, 0, 20, 720);
+  }
+
+  // Floor: checker in rough perspective.
+  //
+  var y0 = 720;
+  g.fillStyle = "#5b3a24";
+  g.fillRect(0, y0 - 14, W, 14);
+  for (var row = 0; row < 8; row++) {
+    var ya = y0 + (Math.pow(row/8, 1.6)*(H - y0)),
+        yb = y0 + (Math.pow((row + 1)/8, 1.6)*(H - y0));
+    for (var col = -12; col < 24; col++) {
+      var xa0 = (W/2) + ((col - 6)*(60 + (row*22))),
+          xa1 = (W/2) + ((col - 5)*(60 + (row*22))),
+          xb0 = (W/2) + ((col - 6)*(60 + ((row + 1)*22))),
+          xb1 = (W/2) + ((col - 5)*(60 + ((row + 1)*22)));
+      g.fillStyle = ( (((row + col) % 2) === 0) ? "#2b2f3a" : "#e9e2d0" );
+      g.beginPath();
+      g.moveTo(xa0, ya); g.lineTo(xa1, ya); g.lineTo(xb1, yb); g.lineTo(xb0, yb);
+      g.closePath();
+      g.fill();
+    }
+  }
+
+  // Arched windows on the left.
+  //
+  for (var i = 0; i < 3; i++) {
+    var wx = 70 + (i*190), wy = 200;
+    g.fillStyle = "#3d6b9c";
+    g.beginPath();
+    g.moveTo(wx, wy + 320); g.lineTo(wx, wy + 70);
+    g.arc(wx + 70, wy + 70, 70, Math.PI, 0);
+    g.lineTo(wx + 140, wy + 320);
+    g.closePath();
+    g.fill();
+    g.strokeStyle = "#f8f3e6"; g.lineWidth = 8; g.stroke();
+    g.fillStyle = "#9fd0ff";
+    g.beginPath(); g.arc(wx + 100, wy + 60, 22, 0, TAU); g.fill();
+    g.strokeStyle = "#f8f3e6"; g.lineWidth = 4;
+    g.beginPath();
+    g.moveTo(wx + 70, wy); g.lineTo(wx + 70, wy + 320);
+    g.moveTo(wx, wy + 180); g.lineTo(wx + 140, wy + 180);
+    g.stroke();
+  }
+
+  g.fillStyle = "#3a2414";
+  g.font = "bold 76px Georgia, 'Times New Roman', serif";
+  g.fillText("PRINT GALLERY", 70, 120);
+  g.font = "28px system-ui, sans-serif";
+  g.fillStyle = "#6b4426";
+  g.fillText("UP ↑   the picture repeats inside the frame →", 74, 165);
+
+  // A visitor looking at the frame.
+  //
+  g.fillStyle = "#22324a";
+  g.beginPath(); g.arc(700, 470, 34, 0, TAU); g.fill();
+  g.fillRect(668, 508, 64, 160);
+  g.fillRect(676, 668, 20, 70);
+  g.fillRect(704, 668, 20, 70);
+  g.fillStyle = "#c0392b";
+  g.fillRect(668, 530, 64, 18);
+
+  // Picture frame around the copy area (880..1280, 295..545).
+  //
+  g.fillStyle = "#7a4a1f";
+  g.fillRect(850, 265, 460, 310);
+  g.fillStyle = "#d4a937";
+  g.fillRect(872, 287, 416, 266);
+  g.fillStyle = "#888";
+  g.fillRect(880, 295, 400, 250);
+  g.fillStyle = "#555";
+  g.font = "24px system-ui, sans-serif";
+  g.fillText("(copy goes here)", 990, 428);
+
+  g.fillStyle = "#e8e0c8";
+  g.fillRect(1020, 600, 120, 36);
+  g.fillStyle = "#333";
+  g.font = "16px system-ui, sans-serif";
+  g.fillText("No. 1956", 1046, 624);
+
+  // Colour wheel and numbered tiles on the right.
+  //
+  for (var a = 0; a < 12; a++) {
+    g.fillStyle = "hsl(" + (a*30) + ",80%,55%)";
+    g.beginPath();
+    g.moveTo(1440, 180);
+    g.arc(1440, 180, 90, (a*TAU)/12, ((a + 1)*TAU)/12);
+    g.closePath();
+    g.fill();
+  }
+  g.fillStyle = "#fff";
+  g.beginPath(); g.arc(1440, 180, 28, 0, TAU); g.fill();
+
+  for (var n = 0; n < 6; n++) {
+    var tx = 1340 + ((n % 2)*120), ty = 330 + (Math.floor(n/2)*120);
+    g.fillStyle = "hsl(" + (n*55 + 10) + ",55%,45%)";
+    g.fillRect(tx, ty, 100, 100);
+    g.fillStyle = "#fff";
+    g.font = "bold 54px system-ui, sans-serif";
+    g.fillText(String(n + 1), tx + 34, ty + 70);
+  }
+  return cv;
+}
+
+//-----------------------------------------------------------------
+// Left canvas interaction.
+//-----------------------------------------------------------------
+
+var drag = null;
+
+function evPos(e, el) {
+  var r = el.getBoundingClientRect();
+  return [ e.clientX - r.left, e.clientY - r.top ];
+}
+
+function nearPt(q, p, r) { return ( (Math.abs(q[0] - p[0]) <= r) && (Math.abs(q[1] - p[1]) <= r) ); }
+
+function hitLeft(q, D) {
+  if (st.mode === "spiral") {
+    var best = null, bd = 13;
+    spiralHandles().forEach(function(h) {
+      var d = cabs(csub(q, h.p));
+      if (d < bd) { bd = d; best = h; }
+    });
+    return ( best || { t: ( isLP() ? "none" : "pan" ) } );
+  }
+  if (isLP()) { return { t: "none" }; }
+
+  var hs = handles(D);
+  for (var i = 0; i < hs.length; i++) {
+    if (nearPt(q, hs[i].p, 8)) { return hs[i]; }
+  }
+
+  // Inside the inner frame: map back to the picture boundary and test.
+  //
+  var back = cadd(D.CO, cdiv(csub(toI(q), D.CI), D.s));
+  if (inOuter(csub(back, D.c), D)) { return { t: "imove" }; }
+  return { t: "pan" };
+}
+
+function segDist(q, a, b) {
+  var e = csub(b, a), l2 = (e[0]*e[0]) + (e[1]*e[1]);
+  var t = ( (l2 > 0) ? Math.max(0, Math.min(1, (((q[0] - a[0])*e[0]) + ((q[1] - a[1])*e[1]))/l2)) : 0 );
+  return cabs(csub(q, cadd(a, cscale(e, t))));
+}
+
+// Index of the boundary edge within a few pixels of q (screen), or null.
+//
+function edgeHit(q) {
+  var poly = st.sp.poly, n = poly.length, best = null, bd = 7;
+  var np  = ( isLP() ? 24 : 1 ),
+      lim = ( isLP() ? (lpg.w/2) : Infinity );
+  for (var i = 0; i < n; i++) {
+    var a = poly[i], b = poly[(i + 1) % n], prev = toS(a);
+    for (var j = 1; j <= np; j++) {
+      var t   = j/np;
+      var cur = toS([ a[0] + ((b[0] - a[0])*t), a[1] + ((b[1] - a[1])*t) ]);
+      if (Math.abs(cur[0] - prev[0]) <= lim) {
+        var d = segDist(q, prev, cur);
+        if (d < bd) { bd = d; best = i; }
+      }
+      prev = cur;
+    }
+  }
+  return best;
+}
+
+function finishDraw() {
+  if (!drawPts) { return; }
+  var pts = [];
+  drawPts.forEach(function(p) {
+    if ( !pts.length || (cabs(csub(toS(p), toS(pts[pts.length - 1]))) > 3) ) { pts.push(p); }
+  });
+  if ( (pts.length > 1) && (cabs(csub(toS(pts[0]), toS(pts[pts.length - 1]))) <= 3) ) { pts.pop(); }
+  if (pts.length >= 3) { st.sp.poly = pts; }
+  drawPts = null;
+  leftMsg = "";
+  invalidate();
+}
+
+var cursors = { iscale: "nwse-resize", irot: "grab", imove: "move", pan: "default", none: "default",
+                c: "move", A: "move", A2: "move", pv: "move", gmove: "move", gknob: "grab",
+                x0y0: "nwse-resize", x1y1: "nwse-resize", x1y0: "nesw-resize", x0y1: "nesw-resize",
+                x0: "ew-resize", x1: "ew-resize", y0: "ns-resize", y1: "ns-resize" };
+
+cl.addEventListener("pointerdown", function(e) {
+  if ( !srcCanvas || (e.button === 2) ) { return; }
+  var q = evPos(e, cl), p = toI(q);
+
+  if (drawPts) {
+    if ( (drawPts.length >= 3) && nearPt(q, toS(drawPts[0]), 9) ) { finishDraw(); }
+    else                                                        { drawPts.push(p); }
+    invalidate();
+    return;
+  }
+
+  var D = derive(), h = hitLeft(q, D);
+  if (h.t === "none") { return; }
+  try { cl.setPointerCapture(e.pointerId); } catch (err) { }
+  drag = { h: h, q0: q, i0: p, qNow: q, inner0: Object.assign({}, st.inner), outer0: Object.assign({}, st.outer),
+           lv0: Object.assign({}, lv), D0: D,
+           poly0: ( st.sp ? st.sp.poly.map(function(v) { return v.slice(); }) : null ) };
+  if ( (h.t === "irot") || (h.t === "gknob") ) { cl.style.cursor = "grabbing"; }
+});
+
+cl.addEventListener("pointermove", function(e) {
+  if (!srcCanvas) { return; }
+  var q = evPos(e, cl), p = toI(q);
+  cursorI = p;
+
+  if (drawPts) {
+    cl.style.cursor = "crosshair";
+    if (drawPts) { invalidate(); }
+    return;
+  }
+
+  if (!drag) {
+    var D = derive(), h = hitLeft(q, D);
+    cl.style.cursor = cursors[( (h.t === "outer") ? h.e : h.t )] || "default";
+    var hh = ( h.p ? h : null );
+    if ( (hh ? (hh.t + hh.i) : "") !== (hoverH ? (hoverH.t + hoverH.i) : "") ) { hoverH = hh; invalidate(); }
+    else                                                                     { hoverH = hh; }
+    var inside = ( (p[0] >= 0) && (p[1] >= 0) && (p[0] <= st.imgW) && (p[1] <= st.imgH) );
+    if (inside) {
+      var u = csub(p, D.c);
+      var where = ( !inDom(u, D) ? "outside the picture region (unused)" :
+                    ( inDom(cdiv(u, D.s), D) ? "inside the shrunken region (shows the next copy)" :
+                      "in the band between the boundaries (used)" ) );
+      $("lstat").textContent = "(" + p[0].toFixed(1) + ", " + p[1].toFixed(1) + ")  " + where;
+    }
+    return;
+  }
+
+  if      (drag.h.t === "c")  { st.sp.c  = p; invalidate(); return; }
+  else if (drag.h.t === "A")  { st.sp.A  = p; invalidate(); return; }
+  else if (drag.h.t === "A2") { st.sp.A2 = p; invalidate(); return; }
+  else if (drag.h.t === "pv") { st.sp.poly[drag.h.i] = p; invalidate(); return; }
+  else if (drag.h.t === "gmove") {
+    var dv = csub(p, drag.i0);
+    st.sp.poly = drag.poly0.map(function(v) { return cadd(v, dv); });
+    invalidate();
+    return;
+  }
+  else if (drag.h.t === "gknob") {
+
+    // Turn and scale about c by the change in the knob's offset from c.
+    //
+    var c0 = st.sp.c,
+        v0 = csub(drag.i0, c0),
+        v1 = csub(p, c0);
+    if ( (cabs(v0) < 1e-6) || (cabs(v1) < 1e-6) ) { return; }
+    var ratio = cdiv(v1, v0);
+    if      (e.shiftKey) { ratio = cscale(ratio, 1/cabs(ratio)); }
+    else if (e.altKey)   { ratio = [ cabs(ratio), 0 ]; }
+    drag.qNow  = q;
+    st.sp.poly = drag.poly0.map(function(v) { return cadd(c0, cmul(csub(v, c0), ratio)); });
+    invalidate();
+    return;
+  }
+
+  var d = drag, inn = st.inner, o = st.outer;
+  var dx = p[0] - d.i0[0], dy = p[1] - d.i0[1];
+
+  if (d.h.t === "pan") {
+    lv.ox = d.lv0.ox + (q[0] - d.q0[0]);
+    lv.oy = d.lv0.oy + (q[1] - d.q0[1]);
+  }
+  else if (d.h.t === "imove") {
+    inn.cx = d.inner0.cx + dx;
+    inn.cy = d.inner0.cy + dy;
+  }
+  else if (d.h.t === "iscale") {
+    var oc = d.D0.outerCorners[d.h.i];
+    var m  = cabs(csub(p, d.D0.CI))/cabs(csub(oc, d.D0.CO));
+    inn.m  = Math.min(0.95, Math.max(0.004, m));
+  }
+  else if (d.h.t === "irot") {
+    var th = Math.atan2(p[1] - inn.cy, p[0] - inn.cx) + (Math.PI/2);
+    th = Math.atan2(Math.sin(th), Math.cos(th));
+    var snap = ( e.shiftKey ? (Math.PI/12) : 0 );
+    if (snap > 0) { th = Math.round(th/snap)*snap; }
+    else if (Math.abs(th) < (1.5*Math.PI/180)) { th = 0; }
+    inn.theta = th;
+  }
+  else if (d.h.t === "outer") {
+    var e0 = d.h.e, w0 = d.outer0.x1 - d.outer0.x0;
+    var cx = Math.min(st.imgW, Math.max(0, p[0])),
+        cy = Math.min(st.imgH, Math.max(0, p[1]));
+    if (e0.indexOf("x0") >= 0) { o.x0 = Math.min(cx, o.x1 - 16); }
+    if (e0.indexOf("x1") >= 0) { o.x1 = Math.max(cx, o.x0 + 16); }
+    if (e0.indexOf("y0") >= 0) { o.y0 = Math.min(cy, o.y1 - 16); }
+    if (e0.indexOf("y1") >= 0) { o.y1 = Math.max(cy, o.y0 + 16); }
+
+    // Keep the inner frame's width on screen when the boundary changes.
+    //
+    inn.m = Math.min(0.95, Math.max(0.004, (d.inner0.m*w0)/(o.x1 - o.x0)));
+  }
+  invalidate();
+});
+
+function endDrag() { drag = null; cl.style.cursor = "default"; invalidate(); }
+cl.addEventListener("pointerup", endDrag);
+cl.addEventListener("pointercancel", endDrag);
+cl.addEventListener("pointerleave", function() { cursorI = null; hoverH = null; invalidate(); });
+
+cl.addEventListener("wheel", function(e) {
+  if (isLP()) { return; }
+  e.preventDefault();
+  var q = evPos(e, cl), p = toI(q);
+  lv.sc *= Math.exp(-e.deltaY*0.0015);
+  lv.ox = q[0] - (p[0]*lv.sc);
+  lv.oy = q[1] - (p[1]*lv.sc);
+  invalidate();
+}, { passive: false });
+
+cl.addEventListener("dblclick", function(e) {
+  if (drawPts) { finishDraw(); return; }
+  if (st.mode === "spiral") {
+    var q = evPos(e, cl), i = edgeHit(q);
+    if (i !== null) { st.sp.poly.splice(i + 1, 0, toI(q)); invalidate(); return; }
+  }
+  if (!isLP()) { fitLeft(); invalidate(); }
+});
+
+cl.addEventListener("contextmenu", function(e) {
+  if (st.mode !== "spiral") { return; }
+  e.preventDefault();
+  var h = hitLeft(evPos(e, cl), derive());
+  if ( (h.t === "pv") && (st.sp.poly.length > 3) ) { st.sp.poly.splice(h.i, 1); invalidate(); }
+});
+
+window.addEventListener("keydown", function(e) {
+  if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) { return; }
+  if ( (e.key === "Enter") && drawPts ) { finishDraw(); }
+  if (e.key === "Escape") {
+    drawPts = null; leftMsg = "";
+    invalidate();
+  }
+});
+
+//-----------------------------------------------------------------
+// Right canvas interaction.
+//-----------------------------------------------------------------
+
+var rdrag = null;
+
+function rq(e) {
+  var r = cr.getBoundingClientRect();
+  return [ (e.clientX - r.left)*(cr.width/r.width), (e.clientY - r.top)*(cr.height/r.height) ];
+}
+
+cr.addEventListener("pointerdown", function(e) {
+  try { cr.setPointerCapture(e.pointerId); } catch (err) { }
+  rdrag = { q0: rq(e), px: st.view.px, py: st.view.py };
+  cr.style.cursor = "grabbing";
+});
+
+cr.addEventListener("pointermove", function(e) {
+  var q = rq(e);
+  if (rdrag) {
+    var sc = st.view.zoom*0.5*Math.min(cr.width, cr.height);
+    st.view.px = rdrag.px + ((q[0] - rdrag.q0[0])/sc);
+    st.view.py = rdrag.py + ((q[1] - rdrag.q0[1])/sc);
+  }
+  hover = { q: q };
+  invalidate();
+});
+
+function endR() { rdrag = null; cr.style.cursor = "grab"; }
+cr.addEventListener("pointerup", endR);
+cr.addEventListener("pointercancel", endR);
+cr.addEventListener("pointerleave", function() { hover = null; rstatHover(null); invalidate(); });
+cr.style.cursor = "grab";
+
+cr.addEventListener("wheel", function(e) {
+  e.preventDefault();
+  var q   = rq(e), W = cr.width, H = cr.height;
+  var s1  = st.view.zoom*0.5*Math.min(W, H);
+  st.view.zoom = Math.min(64, Math.max(1/64, st.view.zoom*Math.exp(-e.deltaY*0.0015)));
+  var s2  = st.view.zoom*0.5*Math.min(W, H);
+  st.view.px += (q[0] - (W/2))*((1/s2) - (1/s1));
+  st.view.py += (q[1] - (H/2))*((1/s2) - (1/s1));
+  invalidate();
+}, { passive: false });
+
+cr.addEventListener("dblclick", resetView);
+
+//-----------------------------------------------------------------
+// Controls.
+//-----------------------------------------------------------------
+
+function num(id, fallback) {
+  var v = parseFloat($(id).value);
+  return ( isFinite(v) ? v : fallback );
+}
+
+function onInput(id, fn) { $(id).addEventListener("input", function() { fn(); invalidate(); }); }
+
+onInput("i_cx", function() { st.inner.cx = num("i_cx", st.inner.cx); });
+onInput("i_cy", function() { st.inner.cy = num("i_cy", st.inner.cy); });
+onInput("i_r",  function() { st.inner.m = 1/Math.max(1.05, num("i_r", 1/st.inner.m)); });
+onInput("i_th", function() { st.inner.theta = num("i_th", 0)*Math.PI/180; });
+
+["o_x0", "o_y0", "o_x1", "o_y1"].forEach(function(id) {
+  onInput(id, function() {
+    var o = st.outer, k = id.slice(2);
+    var v = num(id, o[k]);
+    if      (k === "x0") { o.x0 = Math.max(0, Math.min(v, o.x1 - 16)); }
+    else if (k === "x1") { o.x1 = Math.min(st.imgW, Math.max(v, o.x0 + 16)); }
+    else if (k === "y0") { o.y0 = Math.max(0, Math.min(v, o.y1 - 16)); }
+    else                 { o.y1 = Math.min(st.imgH, Math.max(v, o.y0 + 16)); }
+  });
+});
+
+$("m_rect").addEventListener("click", function() { setMode("rect"); });
+$("m_sp").addEventListener("click", function() { setMode("spiral"); });
+$("v_pic").addEventListener("click", function() { st.lview = "pic"; invalidate(); });
+$("v_lp").addEventListener("click", function() { st.lview = "lp"; invalidate(); });
+
+$("b_draw").addEventListener("click", function() {
+  drawPts   = [];
+  leftMsg   = "Click boundary vertices around the centre; click the first vertex, double-click or press Enter to finish, Esc cancels";
+  invalidate();
+});
+$("b_circle").addEventListener("click", function() {
+  var c  = st.sp.c;
+  var R0 = Math.max(20, Math.min(c[0], c[1], st.imgW - c[0], st.imgH - c[1]));
+  st.sp.poly = circlePoly(c, 0.92*R0, Math.max(3, st.sp.poly.length));
+  invalidate();
+});
+
+// Resample the boundary to n vertices, evenly spaced in angle about c,
+// each on the current boundary (so the shape is kept as far as n
+// allows).  Starts at the first vertex's angle so it does not spin.
+//
+function resamplePoly(n) {
+  n = Math.max(3, Math.min(256, Math.round(n)));
+  if (n === st.sp.poly.length) { return; }
+  derive();
+  var c = st.sp.c, phi0 = carg(csub(st.sp.poly[0], c)), pts = [];
+  for (var j = 0; j < n; j++) {
+    var phi = phi0 + ((j*TAU)/n);
+    pts.push(cadd(c, cscale(cis(phi), Math.exp(gAt(phi)))));
+  }
+  st.sp.poly = pts;
+  invalidate();
+}
+
+$("b_vminus").addEventListener("click", function() { resamplePoly(st.sp.poly.length - 1); });
+$("b_vplus").addEventListener("click", function() { resamplePoly(st.sp.poly.length + 1); });
+$("i_nv").addEventListener("change", function() { resamplePoly(num("i_nv", st.sp.poly.length)); });
+
+[ ["sp_cx", "c", 0], ["sp_cy", "c", 1], ["sp_ax", "A", 0], ["sp_ay", "A", 1], ["sp_bx", "A2", 0], ["sp_by", "A2", 1] ].forEach(function(f) {
+  onInput(f[0], function() { st.sp[f[1]][f[2]] = num(f[0], st.sp[f[1]][f[2]]); });
+});
+onInput("sp_turns",  function() { st.sp.turns = Math.round(num("sp_turns", 0)); });
+onInput("r_feather", function() { st.feather = num("r_feather", 0.15); });
+
+$("b_crop").addEventListener("click", function() {
+  st.outer = { x0: 0, y0: 0, x1: st.imgW, y1: st.imgH };
+  invalidate();
+});
+
+onInput("c_alpha",  function() { st.alphaHoles = $("c_alpha").checked; });
+onInput("c_escher", function() { st.escher = $("c_escher").checked; });
+onInput("i_n1", function() {
+  st.n1 = Math.round(num("i_n1", 1));
+  if ((st.n1 === 0) && (st.n2 === 0)) { st.n1 = 1; }
+});
+onInput("i_n2", function() {
+  st.n2 = Math.round(num("i_n2", 1));
+  if ((st.n1 === 0) && (st.n2 === 0)) { st.n2 = 1; }
+});
+$("b_flip").addEventListener("click", function() { st.n2 = -st.n2; invalidate(); });
+
+onInput("r_zoom", function() { st.view.zoom = Math.pow(2, num("r_zoom", 0)); });
+onInput("r_rot",  function() { st.view.rot = num("r_rot", 0)*Math.PI/180; });
+$("b_rview").addEventListener("click", resetView);
+
+onInput("c_anim",  function() { st.anim = $("c_anim").checked; });
+onInput("i_speed", function() { st.speed = num("i_speed", 0.25); });
+onInput("r_phase", function() { st.t = num("r_phase", 0); });
+
+onInput("s_ss",   function() { st.ss = parseInt($("s_ss").value, 10); });
+onInput("s_rs",   function() { st.renderScale = parseFloat($("s_rs").value); resize(); });
+onInput("r_lod",  function() { st.lodBias = num("r_lod", 0); });
+onInput("c_seams", function() { st.seams = $("c_seams").checked; });
+onInput("c_tint",  function() { st.tint = $("c_tint").checked; });
+onInput("c_lrec",  function() { st.leftRec = $("c_lrec").checked; });
+
+$("b_load").addEventListener("click", function() { $("f_img").click(); });
+$("f_img").addEventListener("change", function() { loadFile(this.files[0]); this.value = ""; });
+$("b_builtin").addEventListener("click", loadBuiltin);
+
+window.addEventListener("paste", function(e) {
+  var items = (e.clipboardData && e.clipboardData.items) || [];
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].type.indexOf("image/") === 0) { loadFile(items[i].getAsFile()); return; }
+  }
+});
+
+var dropEl = $("drop");
+window.addEventListener("dragover", function(e) { e.preventDefault(); dropEl.style.display = "flex"; });
+window.addEventListener("dragleave", function(e) { if (!e.relatedTarget) { dropEl.style.display = "none"; } });
+window.addEventListener("drop", function(e) {
+  e.preventDefault();
+  dropEl.style.display = "none";
+  var f = e.dataTransfer.files[0];
+  if (!f) { return; }
+  if (/json/.test(f.type) || /\.json$/i.test(f.name)) { loadJsonFile(f); }
+  else                                                { loadFile(f); }
+});
+
+//-----------------------------------------------------------------
+// Export.
+//-----------------------------------------------------------------
+
+function download(blob, name) {
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+}
+
+function exportSize() {
+  var v = $("s_size").value;
+  var bw = Math.round(cr.clientWidth*dpr), bh = Math.round(cr.clientHeight*dpr);
+  var w, h;
+  if      (v === "x1")     { w = bw;   h = bh; }
+  else if (v === "x2")     { w = bw*2; h = bh*2; }
+  else if (v === "x4")     { w = bw*4; h = bh*4; }
+  else if (v === "custom") { w = Math.round(num("i_ew", 2000)); h = Math.round(num("i_eh", 2000)); }
+  else {
+    var a = v.split("x");
+    w = parseInt(a[0], 10); h = parseInt(a[1], 10);
+  }
+  var k = Math.min(1, MAX_RB/Math.max(w, h));
+  return [ Math.max(16, Math.floor(w*k)), Math.max(16, Math.floor(h*k)) ];
+}
+
+function baseName() {
+  return "printgallery-" + st.imgName.replace(/\.[^.]*$/, "").replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 40);
+}
+
+function metadata(size) {
+  var D = derive();
+  return {
+    generator : "Print Gallery transform (single-page WebGL2)",
+    created   : new Date().toISOString(),
+    image     : { name: st.imgName, width: st.imgW, height: st.imgH },
+    export    : ( size ? { width: size[0], height: size[1], samplesPerPixel: st.ss*st.ss } : null ),
+    params    : {
+      mode       : st.mode,
+      spiral     : ( st.sp ? { centre: st.sp.c, A: st.sp.A, A2: st.sp.A2, extraTurns: st.sp.turns,
+                               polygon: st.sp.poly, seamBlend: st.feather } : null ),
+      outer      : st.outer,
+      inner      : { cx: st.inner.cx, cy: st.inner.cy, ratio: 1/st.inner.m,
+                     rotationDeg: st.inner.theta*180/Math.PI },
+      escher     : st.escher,
+      n1         : st.n1,
+      n2         : st.n2,
+      view       : { zoom: st.view.zoom, panX: st.view.px, panY: st.view.py,
+                     rotationDeg: st.view.rot*180/Math.PI },
+      phase      : st.t - Math.floor(st.t),
+      speed      : st.speed,
+      alphaHoles : st.alphaHoles,
+      lodBias    : st.lodBias
+    },
+    derived : {
+      fixedPoint   : { x: D.c[0], y: D.c[1] },
+      ratio        : 1/D.m,
+      rotationDeg  : D.theta*180/Math.PI,
+      s            : { re: D.s[0], im: D.s[1] },
+      L            : { re: D.L[0], im: D.L[1] },
+      delta        : { re: D.delta[0], im: D.delta[1] },
+      alpha        : { re: D.alpha[0], im: D.alpha[1] },
+      gamma        : { re: D.gamma[0], im: D.gamma[1], abs: cabs(D.gamma), argDeg: carg(D.gamma)*180/Math.PI },
+      Rmax         : D.Rmax,
+      shrunkBoundary : D.innerPoly.map(function(q) { return { x: q[0], y: q[1] }; })
+    },
+    mapping : [
+      "Image coordinates: pixels, origin top-left, y down; complex number x + i y.",
+      "Rectangle mode: inner frame = S(boundary), S(z) = c + (z - c) s, s = e^{i theta}/r, c = fixed point.",
+      "Spiral mode: c = centre, s = (A2 - c)/(A - c) with extraTurns full turns added to its angle; region = polygon around c.",
+      "Output pixel q (y down, size W x H): z = e^{i viewRot} ((q - (W/2, H/2)) / (zoom * min(W,H)/2) - pan).",
+      "u = exp(alpha (log z + phase*delta) + log Rmax), L = log r - i theta, delta = smallest output repeat (derived.delta),",
+      "alpha = (n1 2 pi i + n2 L) / (2 pi i)  (alpha = 1 when escher is false).",
+      "u is reduced by powers of s until c + u lies inside the boundary but not inside the inner frame; the pixel there is sampled.",
+      "Reference: B. de Smit, H. W. Lenstra Jr., The Mathematical Structure of Escher's Print Gallery, Notices AMS 50(4), 2003; J. Leys, The mathematics behind the Droste effect."
+    ]
+  };
+}
+
+$("b_png").addEventListener("click", function() {
+  if (!srcCanvas) { return; }
+  var sz = exportSize();
+  var btn = $("b_png");
+  btn.textContent = "Rendering " + sz[0] + "x" + sz[1] + "...";
+  btn.disabled = true;
+  setTimeout(function() {
+    try {
+      var img = renderPixels(sz[0], sz[1]);
+      var cv  = document.createElement("canvas");
+      cv.width = sz[0]; cv.height = sz[1];
+      cv.getContext("2d").putImageData(img, 0, 0);
+      cv.toBlob(function(b) {
+        download(b, baseName() + ".png");
+        btn.textContent = "Download PNG";
+        btn.disabled = false;
+      }, "image/png");
+    }
+    catch (err) {
+      alert("Export failed: " + err.message);
+      btn.textContent = "Download PNG";
+      btn.disabled = false;
+    }
+    invalidate();
+  }, 30);
+});
+
+$("b_json").addEventListener("click", function() {
+  var m = metadata(exportSize());
+  download(new Blob([ JSON.stringify(m, null, 2) ], { type: "application/json" }), baseName() + ".json");
+});
+
+$("b_ljson").addEventListener("click", function() { $("f_json").click(); });
+$("f_json").addEventListener("change", function() { loadJsonFile(this.files[0]); this.value = ""; });
+
+function loadJsonFile(f) {
+  if (!f) { return; }
+  f.text().then(function(txt) {
+    var m = JSON.parse(txt), p = m.params || {};
+    if (m.image && ((m.image.width !== st.imgW) || (m.image.height !== st.imgH))) {
+      alert("Note: the metadata was made for a " + m.image.width + "x" + m.image.height +
+            " image; this one is " + st.imgW + "x" + st.imgH + ". Applying the numbers anyway.");
+    }
+    if (p.outer) { st.outer = Object.assign({}, p.outer); }
+    if (p.spiral) {
+      st.sp = { c: p.spiral.centre, A: p.spiral.A, A2: p.spiral.A2, turns: p.spiral.extraTurns || 0,
+                poly: p.spiral.polygon };
+      if ("seamBlend" in p.spiral) { st.feather = p.spiral.seamBlend; }
+    }
+    if (p.mode) { setMode(p.mode); }
+    if (p.inner) {
+      st.inner = { cx: p.inner.cx, cy: p.inner.cy, m: 1/p.inner.ratio, theta: (p.inner.rotationDeg || 0)*Math.PI/180 };
+    }
+    if ("escher" in p) { st.escher = !!p.escher; }
+    if ("n1" in p)     { st.n1 = p.n1; }
+    if ("n2" in p)     { st.n2 = p.n2; }
+    if (p.view) {
+      st.view = { zoom: p.view.zoom, px: p.view.panX, py: p.view.panY, rot: (p.view.rotationDeg || 0)*Math.PI/180 };
+    }
+    if ("phase" in p)      { st.t = p.phase; }
+    if ("speed" in p)      { st.speed = p.speed; }
+    if ("alphaHoles" in p) { st.alphaHoles = !!p.alphaHoles; }
+    if ("lodBias" in p)    { st.lodBias = p.lodBias; }
+    invalidate();
+  }).catch(function(err) { alert("Could not read metadata: " + err.message); });
+}
+
+// Record an exact loop: the phase runs over a whole number of
+// copies, so the last frame joins the first.
+//
+$("b_rec").addEventListener("click", function() {
+  if (recording) { stopRecording(); return; }
+  if (!window.MediaRecorder || !cr.captureStream) { alert("This browser cannot record canvas video."); return; }
+  var fps    = Math.max(5, Math.min(60, Math.round(num("i_fps", 30))));
+  var copies = Math.max(1, Math.round(num("i_rloops", 1)));
+  var sp     = ( (Math.abs(st.speed) > 1e-3) ? Math.abs(st.speed) : 0.25 );
+  var stream = cr.captureStream(fps);
+  var types  = [ "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm" ];
+  var mime   = types.find(function(t) { return MediaRecorder.isTypeSupported(t); }) || "";
+  var rec    = new MediaRecorder(stream, ( mime ? { mimeType: mime, videoBitsPerSecond: 16e6 } : {} ));
+  var chunks = [];
+  rec.ondataavailable = function(e) { if (e.data.size) { chunks.push(e.data); } };
+  rec.onstop = function() {
+    download(new Blob(chunks, { type: "video/webm" }), baseName() + "-loop.webm");
+  };
+  recording = { rec: rec, t0: performance.now(), dur: copies/sp, secPerCopy: 1/sp,
+                dir: ( (st.speed < 0) ? -1 : 1 ), phase0: st.t };
+  rec.start();
+  $("rec").style.display = "inline";
+  $("b_rec").textContent = "Stop recording";
+});
+
+function stopRecording() {
+  if (!recording) { return; }
+  recording.rec.stop();
+  recording = null;
+  $("rec").style.display = "none";
+  $("b_rec").textContent = "Record loop (WebM)";
+}
+
+//-----------------------------------------------------------------
+// Start.
+//-----------------------------------------------------------------
+
+new ResizeObserver(function() {
+  var first = (cl.width <= 1);
+  resize();
+  if (first && srcCanvas) { fitLeft(); }
+}).observe(document.querySelector(".panes"));
+
+resize();
+loadBuiltin();
+fitLeft();
+renderNow();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
